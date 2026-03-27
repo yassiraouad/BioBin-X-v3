@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import Layout from '../components/layout/Layout';
 import { getStudentLeaderboard, getClassLeaderboard, getAllSchools, getSchoolStudentLeaderboard, getSchoolLeaderboard } from '../firebase/db';
 import { useAuth } from '../hooks/useAuth';
+import { useDemo } from '../hooks/useDemo';
 import { Trophy, Users, Crown, Medal, Star } from 'lucide-react';
 
 const RANK_MEDALS = ['🥇', '🥈', '🥉'];
@@ -10,6 +11,7 @@ const RANK_CLASSES = ['rank-1', 'rank-2', 'rank-3'];
 
 export default function Leaderboard() {
   const { user, userData } = useAuth();
+  const { isDemo, demoData } = useDemo();
   const [tab, setTab] = useState('students');
   const [students, setStudents] = useState([]);
   const [classes, setClasses] = useState([]);
@@ -18,11 +20,58 @@ export default function Leaderboard() {
   const [selectedSchool, setSelectedSchool] = useState('all');
 
   useEffect(() => {
+    if (isDemo) {
+      setSchools([demoData.school]);
+      setSelectedSchool(demoData.school.id);
+      setLoading(false);
+      return;
+    }
     getAllSchools().then(schools => setSchools(schools || [])).catch(() => setSchools([]));
-  }, []);
+  }, [isDemo]);
 
   useEffect(() => {
     setLoading(true);
+    
+    if (isDemo) {
+      const demoClasses = demoData.leaderboard.map(c => ({
+        id: c.classId,
+        name: c.className,
+        totalWaste: c.weight,
+        totalPoints: c.weight * 100,
+      }));
+      
+      const allStudents = [];
+      const studentNames = ['Emma', 'Lars', 'Sofia', 'Noah', 'Olivia', 'Jakob', 'Anna', 'Magnus', 'Sofie', 'Oliver'];
+      let weightRemaining = 35.4;
+      let pointsRemaining = 340;
+      
+      demoData.classes.forEach((cls, clsIdx) => {
+        const studentCount = cls.students;
+        const weightPerStudent = cls.weeklyStats.weight / Math.max(studentCount - 1, 1);
+        const pointsPerStudent = Math.round(cls.weeklyStats.weight * 10 / Math.max(studentCount - 1, 1));
+        
+        for (let i = 0; i < Math.min(studentCount - 1, 3); i++) {
+          if (allStudents.length < 10 && clsIdx === 0) {
+            allStudents.push({
+              uid: `demo-student-${allStudents.length + 1}`,
+              name: studentNames[i],
+              points: pointsRemaining - (allStudents.length * 25),
+              totalWaste: weightRemaining - (allStudents.length * 0.5),
+            });
+          }
+        }
+      });
+      
+      setStudents(allStudents.length > 0 ? allStudents : [
+        { uid: 'demo-1', name: 'Emma', points: 120, totalWaste: 12 },
+        { uid: 'demo-2', name: 'Lars', points: 95, totalWaste: 9.5 },
+        { uid: 'demo-3', name: 'Sofia', points: 85, totalWaste: 8.5 },
+      ]);
+      setClasses(demoClasses);
+      setLoading(false);
+      return;
+    }
+
     if (selectedSchool === 'all') {
       Promise.all([getStudentLeaderboard(), getClassLeaderboard()]).then(([s, c]) => {
         setStudents(s || []);
@@ -44,7 +93,7 @@ export default function Leaderboard() {
         setLoading(false);
       });
     }
-  }, [selectedSchool]);
+  }, [selectedSchool, isDemo]);
 
   return (
     <Layout>

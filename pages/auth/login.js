@@ -3,7 +3,8 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { loginUser } from '../../firebase/auth';
-import { Leaf, Mail, Lock, Eye, EyeOff, ArrowRight } from 'lucide-react';
+import { useDemo } from '../../hooks/useDemo';
+import { Leaf, Mail, Lock, Eye, EyeOff, ArrowRight, Gamepad2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export default function Login() {
@@ -12,6 +13,7 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+  const { startDemo, isDemo } = useDemo();
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -24,6 +26,8 @@ export default function Login() {
         router.push('/dashboard/admin');
       } else if (user.role === 'teacher') {
         router.push('/dashboard/teacher');
+      } else if (user.role === 'rector') {
+        router.push('/dashboard/rector');
       } else {
         router.push('/dashboard/student');
       }
@@ -44,6 +48,11 @@ export default function Login() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleDemoLogin = () => {
+    startDemo();
+    router.push('/dashboard/demo-teacher');
   };
 
   return (
@@ -130,6 +139,22 @@ export default function Login() {
             Registrer deg
           </Link>
         </p>
+
+        <div className="mt-8 pt-6 border-t border-bio-border">
+          <button
+            type="button"
+            onClick={handleDemoLogin}
+            className="w-full py-4 px-6 rounded-xl bg-gradient-to-r from-amber-500/10 to-yellow-500/10 border border-amber-500/30 hover:border-amber-500/50 transition-all group"
+          >
+            <div className="flex items-center justify-center gap-3">
+              <Gamepad2 size={20} className="text-amber-400 group-hover:scale-110 transition-transform" />
+              <div className="text-left">
+                <div className="text-amber-400 font-display font-600">Prøv BioBin X gratis</div>
+                <div className="text-slate-500 text-xs font-body">Ingen registrering – kom i gang nå!</div>
+              </div>
+            </div>
+          </button>
+        </div>
       </div>
     </div>
   );

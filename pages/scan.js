@@ -1,6 +1,7 @@
 // pages/scan.js
 import { useRef, useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../hooks/useAuth';
+import { useDemo } from '../hooks/useDemo';
 import Layout from '../components/layout/Layout';
 import { logWaste } from '../firebase/db';
 import { useRouter } from 'next/router';
@@ -10,6 +11,7 @@ import { classifyWasteFromDataUrl, loadModel } from '../utils/wasteClassifier';
 
 export default function ScanPage() {
   const { user, userData, refreshUserData } = useAuth();
+  const { isDemo, addScan } = useDemo();
   const router = useRouter();
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -85,7 +87,7 @@ export default function ScanPage() {
 
   const handleSave = async () => {
     if (!weight || parseFloat(weight) <= 0) return toast.error('Skriv inn vekt (kg)');
-    if (!user) return;
+    if (!user && !isDemo) return;
 
     if (aiAnalysis && !aiAnalysis.isOrganic) {
       toast.error('Dette ser ut til å være ikke-organisk avfall. BioBin godtar kun matavfall!');
@@ -94,15 +96,31 @@ export default function ScanPage() {
 
     setSaving(true);
     try {
-      const data = await logWaste({
-        userId: user.id,
-        weight: parseFloat(weight),
-        imageUrl: null,
-        classId: userData?.classId || null,
-        aiClassification: aiAnalysis,
-      });
-      setResult(data);
-      await refreshUserData();
+      if (isDemo) {
+        const weightNum = parseFloat(weight);
+        const points = Math.round(weightNum * 10);
+        const energy = weightNum * 0.5;
+        const co2 = weightNum * 0.8;
+        
+        addScan(weightNum);
+        
+        setResult({
+          points,
+          energyKwh: energy,
+          co2Saved: co2,
+          totalWaste: weightNum,
+        });
+      } else {
+        const data = await logWaste({
+          userId: user.id,
+          weight: parseFloat(weight),
+          imageUrl: null,
+          classId: userData?.classId || null,
+          aiClassification: aiAnalysis,
+        });
+        setResult(data);
+        await refreshUserData();
+      }
     } catch (err) {
       toast.error('Klarte ikke lagre. Prøv igjen.');
     } finally {

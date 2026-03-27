@@ -1,6 +1,7 @@
 // pages/dashboard/classes.js
 import { useEffect, useState } from 'react';
 import { useAuth } from '../../hooks/useAuth';
+import { useDemo } from '../../hooks/useDemo';
 import Layout from '../../components/layout/Layout';
 import { getTeacherClasses, createClass, getClassStudents, getSchoolByCode, getAllSchools, getSchoolGroups } from '../../firebase/db';
 import { useRouter } from 'next/router';
@@ -9,6 +10,7 @@ import toast from 'react-hot-toast';
 
 export default function ClassesPage() {
   const { user, userData, loading } = useAuth();
+  const { isDemo, demoData } = useDemo();
   const router = useRouter();
   const [classes, setClasses] = useState([]);
   const [expanded, setExpanded] = useState(null);
@@ -22,14 +24,36 @@ export default function ClassesPage() {
   const [creating, setCreating] = useState(false);
 
   useEffect(() => {
-    if (!loading && userData?.role !== 'teacher') router.push('/auth/login');
-  }, [loading, userData]);
+    if (!loading && userData?.role !== 'teacher' && !isDemo) router.push('/auth/login');
+  }, [loading, userData, isDemo]);
 
   useEffect(() => {
+    if (isDemo) {
+      setClasses(demoData.classes);
+      const demoStudents = {
+        'class-7a': [
+          { id: 's1', name: 'Emma', points: 120 },
+          { id: 's2', name: 'Lars', points: 95 },
+          { id: 's3', name: 'Sofia', points: 85 },
+          { id: 's4', name: 'Noah', points: 75 },
+        ],
+        'class-7b': [
+          { id: 's5', name: 'Anna', points: 70 },
+          { id: 's6', name: 'Magnus', points: 65 },
+        ],
+        'class-6a': [
+          { id: 's7', name: 'Olivia', points: 60 },
+          { id: 's8', name: 'Jakob', points: 55 },
+        ],
+      };
+      setClassStudents(demoStudents);
+      return;
+    }
+
     if (user && userData?.role === 'teacher') {
       getTeacherClasses(user.uid).then(cls => setClasses(cls || [])).catch(() => setClasses([]));
     }
-  }, [user, userData]);
+  }, [user, userData, isDemo]);
 
   const toggleExpand = async (classId) => {
     if (expanded === classId) { setExpanded(null); return; }

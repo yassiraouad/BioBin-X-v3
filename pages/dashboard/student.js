@@ -4,11 +4,16 @@ import { useRouter } from 'next/router';
 import Link from 'next/link';
 import { useAuth } from '../../hooks/useAuth';
 import Layout from '../../components/layout/Layout';
-import { getUserLogs, getWeeklyWaste } from '../../firebase/db';
+import { getUserLogs, getWeeklyWaste, dailyCheckIn, getQuizForWeek, getNotifications, getUnreadCount, createNotification } from '../../firebase/db';
 import { getRank, calculateEnergy, calculateCO2Saved } from '../../utils/calculator';
-import { Camera, Trophy, Zap, Wind, Leaf, ArrowRight, Star, TrendingUp } from 'lucide-react';
+import { Camera, Trophy, Zap, Wind, Leaf, ArrowRight, Star, TrendingUp, Users, CheckCircle, Flame } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { ALL_BADGES } from '../../firebase/db';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import GroupStats from '../../components/GroupStats';
+import EcoLevelBadge from '../../components/EcoLevelBadge';
+import CO2Prognose from '../../components/CO2Prognose';
+import WeeklyQuiz from '../../components/WeeklyQuiz';
 
 const CustomTooltip = ({ active, payload, label }) => {
   if (active && payload && payload.length) {
@@ -23,11 +28,13 @@ const CustomTooltip = ({ active, payload, label }) => {
 };
 
 export default function StudentDashboard() {
-  const { user, userData, loading } = useAuth();
+  const { user, userData, loading, refreshUserData } = useAuth();
   const router = useRouter();
   const [logs, setLogs] = useState([]);
   const [chartData, setChartData] = useState([]);
   const [weeklyWaste, setWeeklyWaste] = useState(0);
+  const [checkingIn, setCheckingIn] = useState(false);
+  const [quizComplete, setQuizComplete] = useState(false);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -99,6 +106,98 @@ export default function StudentDashboard() {
             Du er <span style={{ color: rank.color }} className="font-600">{rank.name}</span> med {userData.points || 0} poeng
           </p>
         </div>
+
+        {/* Min gruppe */}
+        {userData.groupId && (
+          <div className="mb-6 animate-fade-in">
+            <div className="bio-card p-5 flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-xl bg-bio-500/15 flex items-center justify-center">
+                  <Users size={24} className="text-bio-400" />
+                </div>
+                <div>
+                  <h3 className="font-display font-700 text-white text-lg">Min gruppe</h3>
+                  <p className="text-slate-400 text-sm font-body">{userData.groupName}</p>
+                </div>
+              </div>
+              <div className="text-right">
+                <p className="text-bio-400 font-mono font-600">{userData.className || ''}</p>
+                <p className="text-slate-500 text-xs font-body">Klasse</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {!userData.groupId && (
+          <div className="mb-6 animate-fade-in">
+            <div className="bio-card p-5 border border-dashed border-slate-600">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-xl bg-slate-700/30 flex items-center justify-center">
+                  <Users size={24} className="text-slate-500" />
+                </div>
+                <div>
+                  <h3 className="font-display font-600 text-slate-300 text-lg">Min gruppe</h3>
+                  <p className="text-slate-500 text-sm font-body">Du er ikke tilknyttet en gruppe ennå</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* EcoLevel */}
+        <div className="mb-6 animate-fade-in">
+          <EcoLevelBadge userData={userData} />
+        </div>
+
+        {/* Check-in */}
+        {(() => {
+          const today = new Date().toDateString();
+          const lastCheckin = userData?.lastCheckin ? new Date(userData.lastCheckin).toDateString() : null;
+          const checkedInToday = lastCheckin === today;
+          
+          return (
+            <div className="mb-6 animate-fade-in">
+              <button
+                onClick={async () => {
+                  if (checkedInToday || checkingIn) return;
+                  setCheckingIn(true);
+                  try {
+                    const result = await dailyCheckIn(user.uid, userData?.classId);
+                    if (result?.streak) {
+                      await refreshUserData();
+                      toast.success(`Sjekket inn! ${result.streak} dagers streak 🔥`);
+                    } else if (result?.alreadyCheckedIn) {
+                      toast('Allerede sjekket inn i dag ✅');
+                    }
+                  } catch (err) {
+                    toast.error('Klarte ikke sjekke inn');
+                  } finally {
+                    setCheckingIn(false);
+                  }
+                }}
+                disabled={checkedInToday || checkingIn}
+                className={`w-full py-4 rounded-xl font-body font-600 flex items-center justify-center gap-3 transition-all ${
+                  checkedInToday
+                    ? 'bg-earth-500/20 border border-earth-500/30 text-earth-400 cursor-default'
+                    : 'bg-gradient-to-r from-orange-500 to-orange-600 border border-orange-400/30 text-white hover:shadow-lg'
+                }`}
+              >
+                {checkingIn ? (
+                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                ) : checkedInToday ? (
+                  <><CheckCircle size={20} /> Sjekket inn i dag</>
+                ) : (
+                  <><Flame size={20} /> Sjekk inn i dag (+10 eco-poeng)</>
+                )}
+                {userData?.currentStreak > 0 && !checkedInToday && (
+                  <span className="text-xs bg-orange-400/20 px-2 py-1 rounded-full">
+                    🔥 {userData.currentStreak} dager
+                  </span>
+                )}
+              </button>
+            </div>
+          );
+        })()}
 
         {/* Quick action */}
         <Link href="/scan" className="block mb-6 animate-fade-in">
@@ -210,6 +309,41 @@ export default function StudentDashboard() {
             </div>
           )}
         </div>
+
+        {userData.groupId && (
+          <GroupStats groupId={userData.groupId} teacherId={userData?.teacherId} />
+        )}
+
+        {/* Siste registreringer */}
+        <div className="bio-card p-6">
+          <h2 className="font-display font-700 text-white text-lg mb-5">Siste registreringer</h2>
+          {logs.length === 0 ? (
+            <div className="text-center py-10 text-slate-500">
+              <Leaf size={40} className="mx-auto mb-3 opacity-30" />
+              <p className="font-body">Ingen registreringer ennå.<br />Kast mat og tjen poeng!</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {logs.slice(0, 5).map(log => (
+                <div key={log.id} className="flex items-center justify-between p-3 rounded-xl bg-white/2 border border-white/5">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-bio-500/10 flex items-center justify-center text-lg">🥬</div>
+                    <div>
+                      <div className="text-white text-sm font-body font-500">{log.weight} kg matavfall</div>
+                      <div className="text-slate-500 text-xs font-body">
+                        {log.timestamp?.toDate ? log.timestamp.toDate().toLocaleDateString('no-NO') : 'Ukjent dato'}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-bio-400 font-mono text-sm font-500">+{log.points} p</div>
+                </div>
+              ))}
+            </div>
+            )}
+        </div>
+
+        <WeeklyQuiz userId={user?.uid} />
+        <CO2Prognose />
       </div>
     </Layout>
   );

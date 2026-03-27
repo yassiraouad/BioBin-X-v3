@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import Layout from '../components/layout/Layout';
 import { useAuth } from '../hooks/useAuth';
+import { useDemo } from '../hooks/useDemo';
 import { getUserLogs, getGlobalStats } from '../firebase/db';
 import { calculateEnergy, calculateCO2Saved, getWeeklyData } from '../utils/calculator';
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
@@ -23,12 +24,35 @@ const CustomTooltip = ({ active, payload, label }) => {
 
 export default function Stats() {
   const { user, userData } = useAuth();
+  const { isDemo, demoData, localState } = useDemo();
   const [logs, setLogs] = useState([]);
   const [globalStats, setGlobalStats] = useState(null);
   const [weeklyData, setWeeklyData] = useState([]);
   const [tab, setTab] = useState('personal');
 
   useEffect(() => {
+    if (isDemo) {
+      const demoLogs = [
+        { timestamp: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000), weight: 2.3 },
+        { timestamp: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000), weight: 1.8 },
+        { timestamp: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000), weight: 2.1 },
+        { timestamp: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000), weight: 1.5 },
+        { timestamp: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000), weight: 2.0 },
+        { timestamp: new Date(Date.now() - 6 * 24 * 60 * 60 * 1000), weight: 1.2 },
+        { timestamp: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), weight: 1.9 },
+      ];
+      setLogs(demoLogs);
+      setWeeklyData(getWeeklyData(demoLogs));
+      setGlobalStats({
+        totalWaste: demoData.classes.reduce((sum, c) => sum + c.weeklyStats.weight, 0),
+        totalEnergy: demoData.classes.reduce((sum, c) => sum + c.weeklyStats.weight * 0.5, 0),
+        totalCO2: demoData.classes.reduce((sum, c) => sum + c.weeklyStats.weight * 0.8, 0),
+        activeUsers: demoData.classes.reduce((sum, c) => sum + c.students, 0),
+        totalScans: demoData.classes.reduce((sum, c) => sum + c.weeklyStats.empties * 10, 0),
+      });
+      return;
+    }
+
     if (user) {
       getUserLogs(user.uid).then(userLogs => {
         setLogs(userLogs || []);
@@ -39,9 +63,9 @@ export default function Stats() {
       });
     }
     getGlobalStats().then(stats => setGlobalStats(stats)).catch(() => setGlobalStats(null));
-  }, [user]);
+  }, [user, isDemo]);
 
-  const totalWaste = userData?.totalWaste || 0;
+  const totalWaste = isDemo ? localState.totalWeight : (userData?.totalWaste || 0);
   const energy = calculateEnergy(totalWaste);
   const co2 = calculateCO2Saved(totalWaste);
 

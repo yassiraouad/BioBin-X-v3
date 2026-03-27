@@ -2,12 +2,14 @@
 import { useRouter } from 'next/router';
 import Link from 'next/link';
 import { useAuth } from '../../hooks/useAuth';
+import { useDemo } from '../../hooks/useDemo';
 import { logoutUser } from '../../firebase/auth';
 import toast from 'react-hot-toast';
 import {
   LayoutDashboard, Leaf, Trophy, Brain, BarChart3,
-  Camera, Users, LogOut, Shield, Zap
+  Camera, Users, LogOut, Shield, Zap, Bell
 } from 'lucide-react';
+import DemoBanner from '../DemoBanner';
 
 const studentNav = [
   { href: '/dashboard/student', icon: LayoutDashboard, label: 'Dashboard' },
@@ -32,40 +34,66 @@ const adminNav = [
   { href: '/stats', icon: BarChart3, label: 'Statistikk' },
 ];
 
+const rectorNav = [
+  { href: '/dashboard/rector', icon: LayoutDashboard, label: 'Oversikt' },
+  { href: '/leaderboard', icon: Trophy, label: 'Rangering' },
+  { href: '/stats', icon: BarChart3, label: 'Statistikk' },
+  { href: '/dashboard/classes', icon: Users, label: 'Klasser' },
+];
+
+const demoTeacherNav = [
+  { href: '/dashboard/demo-teacher', icon: LayoutDashboard, label: 'Dashboard' },
+  { href: '/leaderboard', icon: Trophy, label: 'Rangering' },
+  { href: '/stats', icon: BarChart3, label: 'Statistikk' },
+  { href: '/dashboard/classes', icon: Users, label: 'Klasser' },
+];
+
 export default function Layout({ children }) {
   const { userData } = useAuth();
+  const { isDemo, demoUser, exitDemo } = useDemo();
   const router = useRouter();
   
+  const activeUser = isDemo ? demoUser : userData;
+  
   const getNav = () => {
-    if (userData?.role === 'admin') return adminNav;
-    if (userData?.role === 'teacher') return teacherNav;
+    if (isDemo) return demoTeacherNav;
+    if (activeUser?.role === 'admin') return adminNav;
+    if (activeUser?.role === 'teacher') return teacherNav;
+    if (activeUser?.role === 'rector') return rectorNav;
     return studentNav;
   };
   
   const nav = getNav();
 
   const handleLogout = async () => {
-    await logoutUser();
+    if (isDemo) {
+      exitDemo();
+    } else {
+      await logoutUser();
+    }
     toast.success('Logget ut!');
     router.push('/');
   };
 
   const getRoleLabel = () => {
-    if (userData?.role === 'admin') return 'Administrator';
-    if (userData?.role === 'teacher') return 'Lærer';
+    if (activeUser?.role === 'admin') return 'Administrator';
+    if (activeUser?.role === 'teacher') return 'Lærer';
+    if (activeUser?.role === 'rector') return 'Rector';
     return 'Elev';
   };
 
   const getRoleColor = () => {
-    if (userData?.role === 'admin') return 'text-red-400';
-    if (userData?.role === 'teacher') return 'text-earth-400';
+    if (activeUser?.role === 'admin') return 'text-red-400';
+    if (activeUser?.role === 'teacher') return 'text-earth-400';
+    if (activeUser?.role === 'rector') return 'text-purple-400';
     return 'text-bio-400';
   };
 
   return (
     <div className="flex min-h-screen bg-bio-gradient">
+      <DemoBanner />
       {/* Sidebar - desktop */}
-      <aside className="hidden lg:flex flex-col w-64 fixed left-0 top-0 h-full border-r border-bio-border bg-dark-900/80 backdrop-blur-xl z-40">
+      <aside className={`hidden lg:flex flex-col w-64 fixed left-0 top-0 h-full border-r border-bio-border bg-dark-900/80 backdrop-blur-xl z-40 ${isDemo ? 'lg:top-10' : ''}`}>
         {/* Logo */}
         <div className="p-6 border-b border-bio-border">
           <Link href="/" className="flex items-center gap-3">
@@ -80,22 +108,27 @@ export default function Layout({ children }) {
         </div>
 
         {/* User info */}
-        {userData && (
+        {activeUser && (
           <div className="px-4 py-4 border-b border-bio-border">
             <div className="bio-card p-3 flex items-center gap-3">
               <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-bio-600 to-moss-700 flex items-center justify-center text-white font-display font-700 text-sm">
-                {userData.name?.[0]?.toUpperCase() || '?'}
+                {activeUser.name?.[0]?.toUpperCase() || '?'}
               </div>
               <div className="flex-1 min-w-0">
-                <div className="text-white text-sm font-display font-600 truncate">{userData.name}</div>
+                <div className="text-white text-sm font-display font-600 truncate">{activeUser.name}</div>
                 <div className={`text-xs capitalize ${getRoleColor()}`}>{getRoleLabel()}</div>
               </div>
-              {userData.role === 'student' && (
+              {activeUser.role === 'student' && (
                 <div className="text-right">
-                  <div className="text-bio-400 text-xs font-mono">{userData.points || 0}p</div>
+                  <div className="text-bio-400 text-xs font-mono">{activeUser.points || 0}p</div>
                 </div>
               )}
             </div>
+            {isDemo && (
+              <div className="mt-2 text-xs text-amber-400 text-center bg-amber-500/10 rounded-lg py-1">
+                Demo-modus
+              </div>
+            )}
           </div>
         )}
 
@@ -140,7 +173,7 @@ export default function Layout({ children }) {
       </aside>
 
       {/* Main content */}
-      <main className="flex-1 lg:ml-64 min-h-screen pb-20 lg:pb-0">
+      <main className={`flex-1 lg:ml-64 min-h-screen pb-20 lg:pb-0 ${isDemo ? 'lg:pt-10' : ''}`}>
         {children}
       </main>
 

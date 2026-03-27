@@ -70,6 +70,7 @@ export default function Signup() {
                 {[
                   { value: 'student', label: 'Elev', icon: GraduationCap },
                   { value: 'teacher', label: 'Lærer', icon: School },
+                  { value: 'rector', label: 'Rector', icon: School },
                 ].map(({ value, label, icon: Icon }) => (
                   <button
                     key={value}

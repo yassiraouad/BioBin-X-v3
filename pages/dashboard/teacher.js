@@ -4,11 +4,19 @@ import { useRouter } from 'next/router';
 import Link from 'next/link';
 import { useAuth } from '../../hooks/useAuth';
 import Layout from '../../components/layout/Layout';
-import { getTeacherClasses, getClassStudents, getClassLogs, createClass, setClassWeeklyGoal, getWeeklyWaste, getSchoolByCode, getAllSchools, getSchoolGroups } from '../../firebase/db';
+import { getTeacherClasses, getClassStudents, getClassLogs, createClass, setClassWeeklyGoal, getWeeklyWaste, getSchoolByCode, getAllSchools, getSchoolGroups, getBinsByTeacher, getAllBinsHealth, setClassWeeklyGoalKg } from '../../firebase/db';
 import { calculateEnergy, calculateCO2Saved } from '../../utils/calculator';
-import { Users, Leaf, Zap, Wind, Plus, Copy, X, BarChart2, Trophy, Target, CheckCircle } from 'lucide-react';
+import { Users, Leaf, Zap, Wind, Plus, Copy, X, BarChart2, Trophy, Target, CheckCircle, Trash2, Scale } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import AddBinModal from '../../components/AddBinModal';
+import GroupModal from '../../components/GroupModal';
+import Klasseligaen from '../../components/Klasseligaen';
+import Challenges from '../../components/Challenges';
+import SmartAvfallsanalyse from '../../components/SmartAvfallsanalyse';
+import CO2Prognose from '../../components/CO2Prognose';
+import AIAssistant from '../../components/AIAssistant';
+import { Sparkles, MessageCircle } from 'lucide-react';
 
 export default function TeacherDashboard() {
   const { user, userData, loading } = useAuth();
@@ -29,6 +37,10 @@ export default function TeacherDashboard() {
   const [selectedSchool, setSelectedSchool] = useState('');
   const [selectedGroup, setSelectedGroup] = useState('');
   const [selectedSchoolData, setSelectedSchoolData] = useState(null);
+  const [showAddBinModal, setShowAddBinModal] = useState(false);
+  const [bins, setBins] = useState([]);
+  const [showGroupModal, setShowGroupModal] = useState(false);
+  const [showAIAssistant, setShowAIAssistant] = useState(false);
 
   useEffect(() => {
     if (!loading && (!user || (userData?.role !== 'teacher' && userData?.role !== 'admin'))) {
@@ -45,6 +57,7 @@ export default function TeacherDashboard() {
         console.error('Error loading classes:', err);
         setClasses([]);
       });
+      getBinsByTeacher(user.uid).then(b => setBins(b || [])).catch(() => setBins([]));
     }
   }, [user, userData]);
 
@@ -165,6 +178,27 @@ export default function TeacherDashboard() {
           >
             <Plus size={16} />
             Ny klasse
+          </button>
+          <button
+            onClick={() => setShowAddBinModal(true)}
+            className="btn-primary flex items-center gap-2 text-sm bg-moss-600"
+          >
+            <Trash2 size={16} />
+            Legg til bøtte
+          </button>
+          <button
+            onClick={() => setShowGroupModal(true)}
+            className="btn-primary flex items-center gap-2 text-sm"
+          >
+            <Users size={16} />
+            Grupper
+          </button>
+          <button
+            onClick={() => setShowAIAssistant(true)}
+            className="btn-primary flex items-center gap-2 text-sm bg-moss-600"
+          >
+            <Sparkles size={16} />
+            AI-assistent
           </button>
         </div>
 
@@ -354,6 +388,17 @@ export default function TeacherDashboard() {
             </div>
           </>
         )}
+
+        {/* New Features */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+          <Klasseligaen userData={userData} />
+          <CO2Prognose />
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+          <Challenges classId={selectedClass?.id} teacherId={user?.uid} />
+          <SmartAvfallsanalyse teacherId={user?.uid} />
+        </div>
       </div>
 
       {/* Create class modal */}
@@ -455,6 +500,30 @@ export default function TeacherDashboard() {
           </div>
         </div>
       )}
+
+      <AddBinModal
+        isOpen={showAddBinModal}
+        onClose={() => setShowAddBinModal(false)}
+        onSuccess={() => {
+          if (user) {
+            getBinsByTeacher(user.uid).then(b => setBins(b || [])).catch(() => {});
+          }
+        }}
+      />
+
+      <GroupModal
+        isOpen={showGroupModal}
+        onClose={() => setShowGroupModal(false)}
+        teacherId={user?.uid}
+        onSuccess={() => {
+        }}
+      />
+
+      <AIAssistant
+        isOpen={showAIAssistant}
+        onClose={() => setShowAIAssistant(false)}
+        teacherId={user?.uid}
+      />
     </Layout>
   );
 }
