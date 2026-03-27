@@ -24,7 +24,11 @@ export default function ClassesPage() {
   const [creating, setCreating] = useState(false);
 
   useEffect(() => {
-    if (!loading && userData?.role !== 'teacher' && !isDemo) router.push('/auth/login');
+    if (!loading && userData) {
+      if (userData.role !== 'teacher' && userData.role !== 'admin' && userData.role !== 'rector' && !isDemo) {
+        router.push('/auth/login');
+      }
+    }
   }, [loading, userData, isDemo]);
 
   useEffect(() => {

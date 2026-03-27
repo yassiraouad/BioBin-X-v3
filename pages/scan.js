@@ -10,7 +10,7 @@ import toast from 'react-hot-toast';
 import { classifyWasteFromDataUrl, loadModel } from '../utils/wasteClassifier';
 
 export default function ScanPage() {
-  const { user, userData, refreshUserData } = useAuth();
+  const { user, userData, loading, refreshUserData } = useAuth();
   const { isDemo, addScan } = useDemo();
   const router = useRouter();
   const videoRef = useRef(null);
@@ -49,10 +49,17 @@ export default function ScanPage() {
   }, []);
 
   useEffect(() => {
+    if (!loading && !user && !isDemo) {
+      router.push('/auth/login');
+    }
+  }, [user, loading, isDemo]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && (loading || !user) && !isDemo) return;
     startCamera();
     loadModel().then(() => setModelLoaded(true)).catch(console.error);
     return () => stopCamera();
-  }, [startCamera]);
+  }, [startCamera, stopCamera, user, loading, isDemo]);
 
   const capturePhoto = async () => {
     if (!videoRef.current || !canvasRef.current) return;
@@ -112,7 +119,7 @@ export default function ScanPage() {
         });
       } else {
         const data = await logWaste({
-          userId: user.id,
+          userId: user.uid,
           weight: parseFloat(weight),
           imageUrl: null,
           classId: userData?.classId || null,
@@ -127,6 +134,16 @@ export default function ScanPage() {
       setSaving(false);
     }
   };
+
+  if (loading || !user && !isDemo) {
+    return (
+      <Layout>
+        <div className="min-h-screen bg-dark-900 flex items-center justify-center">
+          <div className="w-10 h-10 border-2 border-bio-500/30 border-t-bio-500 rounded-full animate-spin" />
+        </div>
+      </Layout>
+    );
+  }
 
   if (result) {
     return (

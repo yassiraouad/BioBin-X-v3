@@ -1,5 +1,6 @@
 // pages/stats.js
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/router';
 import Layout from '../components/layout/Layout';
 import { useAuth } from '../hooks/useAuth';
 import { useDemo } from '../hooks/useDemo';
@@ -23,12 +24,19 @@ const CustomTooltip = ({ active, payload, label }) => {
 };
 
 export default function Stats() {
-  const { user, userData } = useAuth();
+  const { user, userData, loading } = useAuth();
+  const router = useRouter();
   const { isDemo, demoData, localState } = useDemo();
   const [logs, setLogs] = useState([]);
   const [globalStats, setGlobalStats] = useState(null);
   const [weeklyData, setWeeklyData] = useState([]);
   const [tab, setTab] = useState('personal');
+
+  useEffect(() => {
+    if (!loading && !user && !isDemo) {
+      router.push('/auth/login');
+    }
+  }, [user, loading, isDemo]);
 
   useEffect(() => {
     if (isDemo) {

@@ -1,10 +1,14 @@
 // pages/quiz.js
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Layout from '../components/layout/Layout';
 import { quizQuestions, categoryColors } from '../utils/quizData';
+import { useAuth } from '../hooks/useAuth';
+import { useRouter } from 'next/router';
 import { Brain, CheckCircle, XCircle, ArrowRight, RotateCcw, Trophy, Zap } from 'lucide-react';
 
 export default function Quiz() {
+  const { user, loading } = useAuth();
+  const router = useRouter();
   const [started, setStarted] = useState(false);
   const [currentQ, setCurrentQ] = useState(0);
   const [selected, setSelected] = useState(null);
@@ -12,6 +16,12 @@ export default function Quiz() {
   const [score, setScore] = useState(0);
   const [finished, setFinished] = useState(false);
   const [answers, setAnswers] = useState([]);
+
+  useEffect(() => {
+    if (!loading && !user) {
+      router.push('/auth/login');
+    }
+  }, [user, loading]);
 
   const question = quizQuestions[currentQ];
 

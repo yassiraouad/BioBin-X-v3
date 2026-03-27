@@ -1,4 +1,4 @@
-import { initializeApp } from 'firebase/app';
+import { initializeApp, getApps } from 'firebase/app';
 import { getFirestore, collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, query, where, orderBy, limit, addDoc, serverTimestamp, enableIndexedDbPersistence } from 'firebase/firestore';
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
 
@@ -11,7 +11,7 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID
 };
 
-const app = firebaseConfig.apiKey ? initializeApp(firebaseConfig) : null;
+const app = firebaseConfig.apiKey ? (getApps().length > 0 ? getApps()[0] : initializeApp(firebaseConfig)) : null;
 const db = app ? getFirestore(app) : null;
 const auth = app ? getAuth(app) : null;
 

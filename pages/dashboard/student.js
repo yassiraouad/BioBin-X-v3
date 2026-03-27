@@ -37,16 +37,12 @@ export default function StudentDashboard() {
   const [quizComplete, setQuizComplete] = useState(false);
 
   useEffect(() => {
-    if (!loading && !user) {
-      router.push('/auth/login');
+    if (!loading && user) {
+      if (userData?.role === 'teacher' || userData?.role === 'admin' || userData?.role === 'rector') {
+        router.push('/dashboard/teacher');
+      }
     }
   }, [user, userData, loading]);
-
-  useEffect(() => {
-    if (!loading && !user) {
-      router.push('/auth/login');
-    }
-  }, [user, loading]);
 
   useEffect(() => {
     if (user) {
@@ -313,34 +309,6 @@ export default function StudentDashboard() {
         {userData.groupId && (
           <GroupStats groupId={userData.groupId} teacherId={userData?.teacherId} />
         )}
-
-        {/* Siste registreringer */}
-        <div className="bio-card p-6">
-          <h2 className="font-display font-700 text-white text-lg mb-5">Siste registreringer</h2>
-          {logs.length === 0 ? (
-            <div className="text-center py-10 text-slate-500">
-              <Leaf size={40} className="mx-auto mb-3 opacity-30" />
-              <p className="font-body">Ingen registreringer ennå.<br />Kast mat og tjen poeng!</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {logs.slice(0, 5).map(log => (
-                <div key={log.id} className="flex items-center justify-between p-3 rounded-xl bg-white/2 border border-white/5">
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-bio-500/10 flex items-center justify-center text-lg">🥬</div>
-                    <div>
-                      <div className="text-white text-sm font-body font-500">{log.weight} kg matavfall</div>
-                      <div className="text-slate-500 text-xs font-body">
-                        {log.timestamp?.toDate ? log.timestamp.toDate().toLocaleDateString('no-NO') : 'Ukjent dato'}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="text-bio-400 font-mono text-sm font-500">+{log.points} p</div>
-                </div>
-              ))}
-            </div>
-            )}
-        </div>
 
         <WeeklyQuiz userId={user?.uid} />
         <CO2Prognose />

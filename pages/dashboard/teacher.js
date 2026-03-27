@@ -43,7 +43,7 @@ export default function TeacherDashboard() {
   const [showAIAssistant, setShowAIAssistant] = useState(false);
 
   useEffect(() => {
-    if (!loading && (!user || (userData?.role !== 'teacher' && userData?.role !== 'admin'))) {
+    if (!loading && (!user || (userData?.role !== 'teacher' && userData?.role !== 'admin' && userData?.role !== 'rector'))) {
       router.push('/auth/login');
     }
   }, [user, userData, loading]);
@@ -172,34 +172,36 @@ export default function TeacherDashboard() {
             </h1>
             <p className="text-slate-400 font-body">Hei {userData.name}! Oversikt over klassen din.</p>
           </div>
-          <button
-            onClick={handleOpenCreateModal}
-            className="btn-primary flex items-center gap-2 text-sm"
-          >
-            <Plus size={16} />
-            Ny klasse
-          </button>
-          <button
-            onClick={() => setShowAddBinModal(true)}
-            className="btn-primary flex items-center gap-2 text-sm bg-moss-600"
-          >
-            <Trash2 size={16} />
-            Legg til bøtte
-          </button>
-          <button
-            onClick={() => setShowGroupModal(true)}
-            className="btn-primary flex items-center gap-2 text-sm"
-          >
-            <Users size={16} />
-            Grupper
-          </button>
-          <button
-            onClick={() => setShowAIAssistant(true)}
-            className="btn-primary flex items-center gap-2 text-sm bg-moss-600"
-          >
-            <Sparkles size={16} />
-            AI-assistent
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={handleOpenCreateModal}
+              className="btn-primary flex items-center gap-2 text-sm"
+            >
+              <Plus size={16} />
+              Ny klasse
+            </button>
+            <button
+              onClick={() => setShowAddBinModal(true)}
+              className="btn-primary flex items-center gap-2 text-sm bg-moss-600"
+            >
+              <Trash2 size={16} />
+              Legg til bøtte
+            </button>
+            <button
+              onClick={() => setShowGroupModal(true)}
+              className="btn-primary flex items-center gap-2 text-sm"
+            >
+              <Users size={16} />
+              Grupper
+            </button>
+            <button
+              onClick={() => setShowAIAssistant(true)}
+              className="btn-primary flex items-center gap-2 text-sm bg-moss-600"
+            >
+              <Sparkles size={16} />
+              AI-assistent
+            </button>
+          </div>
         </div>
 
         {/* Class selector */}

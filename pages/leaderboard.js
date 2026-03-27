@@ -1,5 +1,6 @@
 // pages/leaderboard.js
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/router';
 import Layout from '../components/layout/Layout';
 import { getStudentLeaderboard, getClassLeaderboard, getAllSchools, getSchoolStudentLeaderboard, getSchoolLeaderboard } from '../firebase/db';
 import { useAuth } from '../hooks/useAuth';
@@ -10,7 +11,8 @@ const RANK_MEDALS = ['🥇', '🥈', '🥉'];
 const RANK_CLASSES = ['rank-1', 'rank-2', 'rank-3'];
 
 export default function Leaderboard() {
-  const { user, userData } = useAuth();
+  const { user, loading: authLoading } = useAuth();
+  const router = useRouter();
   const { isDemo, demoData } = useDemo();
   const [tab, setTab] = useState('students');
   const [students, setStudents] = useState([]);
@@ -18,6 +20,12 @@ export default function Leaderboard() {
   const [loading, setLoading] = useState(true);
   const [schools, setSchools] = useState([]);
   const [selectedSchool, setSelectedSchool] = useState('all');
+
+  useEffect(() => {
+    if (!authLoading && !user && !isDemo) {
+      router.push('/auth/login');
+    }
+  }, [user, authLoading, isDemo]);
 
   useEffect(() => {
     if (isDemo) {
