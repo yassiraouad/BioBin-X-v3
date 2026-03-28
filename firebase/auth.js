@@ -66,7 +66,7 @@ export async function registerUser({ name, email, password, role, classCode }) {
 
 export async function loginUser({ email, password }) {
   if (!app || !auth || !db) {
-    throw new Error('Firebase not configured');
+    throw new Error('Firebase er ikke konfigurert. Sjekk miljøvariablene.');
   }
   
   const userCredential = await signInWithEmailAndPassword(auth, email, password);
@@ -93,9 +93,19 @@ export async function loginUser({ email, password }) {
 
 export async function logoutUser() {
   if (!app || !auth) {
-    throw new Error('Firebase not configured');
+    return;
   }
-  await signOut(auth);
+  try {
+    await auth.signOut();
+    if (typeof window !== 'undefined') {
+      window.location.href = '/auth/login';
+    }
+  } catch (error) {
+    console.error('Logout error:', error);
+    if (typeof window !== 'undefined') {
+      window.location.href = '/auth/login';
+    }
+  }
 }
 
 export async function getUserData(uid) {
