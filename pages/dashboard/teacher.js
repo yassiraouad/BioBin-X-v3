@@ -73,7 +73,7 @@ export default function TeacherDashboard() {
         console.error('Error loading class data:', err);
         setClassStats({ students: [], logs: [], totalWaste: 0 });
       });
-      getWeeklyWaste(null, selectedClass.id).then(setClassWeeklyWaste).catch(() => setClassWeeklyWaste(0));
+      getWeeklyWaste(selectedClass.id).then(setClassWeeklyWaste).catch(() => setClassWeeklyWaste(0));
       setGoalWeight(selectedClass.weeklyGoal?.toString() || '');
     }
   }, [selectedClass]);
@@ -339,20 +339,34 @@ export default function TeacherDashboard() {
 
             {/* Stats */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-              {[
-                { label: 'Elever', value: classStats.students.length, icon: Users, color: 'bio', unit: 'stk' },
-                { label: 'Matavfall', value: classStats.totalWaste.toFixed(1), icon: Leaf, color: 'bio', unit: 'kg' },
-                { label: 'Energi', value: energy.toFixed(1), icon: Zap, color: 'moss', unit: 'kWh' },
-                { label: 'CO₂ spart', value: co2.toFixed(1), icon: Wind, color: 'earth', unit: 'kg' },
-              ].map(({ label, value, icon: Icon, color, unit }) => (
-                <div key={label} className="bio-card p-5">
-                  <div className={`w-9 h-9 rounded-xl bg-${color}-500/15 flex items-center justify-center mb-3`}>
-                    <Icon size={18} className={`text-${color}-400`} />
-                  </div>
-                  <div className="font-display font-700 text-white text-2xl">{value}</div>
-                  <div className="text-slate-500 text-xs font-body mt-1">{label} ({unit})</div>
+              <div className="bio-card p-5">
+                <div className="w-9 h-9 rounded-xl bg-bio-500/15 flex items-center justify-center mb-3">
+                  <Users size={18} className="text-bio-400" />
                 </div>
-              ))}
+                <div className="font-display font-700 text-white text-2xl">{classStats.students.length}</div>
+                <div className="text-slate-500 text-xs font-body mt-1">Elever (stk)</div>
+              </div>
+              <div className="bio-card p-5">
+                <div className="w-9 h-9 rounded-xl bg-bio-500/15 flex items-center justify-center mb-3">
+                  <Leaf size={18} className="text-bio-400" />
+                </div>
+                <div className="font-display font-700 text-white text-2xl">{classStats.totalWaste.toFixed(1)}</div>
+                <div className="text-slate-500 text-xs font-body mt-1">Matavfall (kg)</div>
+              </div>
+              <div className="bio-card p-5">
+                <div className="w-9 h-9 rounded-xl bg-moss-500/15 flex items-center justify-center mb-3">
+                  <Zap size={18} className="text-moss-400" />
+                </div>
+                <div className="font-display font-700 text-white text-2xl">{energy.toFixed(1)}</div>
+                <div className="text-slate-500 text-xs font-body mt-1">Energi (kWh)</div>
+              </div>
+              <div className="bio-card p-5">
+                <div className="w-9 h-9 rounded-xl bg-earth-500/15 flex items-center justify-center mb-3">
+                  <Wind size={18} className="text-earth-400" />
+                </div>
+                <div className="font-display font-700 text-white text-2xl">{co2.toFixed(1)}</div>
+                <div className="text-slate-500 text-xs font-body mt-1">CO₂ spart (kg)</div>
+              </div>
             </div>
 
             {/* Bar chart */}

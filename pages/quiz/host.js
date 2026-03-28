@@ -35,7 +35,8 @@ export default function HostQuiz() {
         router.push('/dashboard/teacher');
         return;
       }
-      if (s.teacherUid !== user.uid) {
+      const canAccess = s.teacherUid === user.uid || userData?.role === 'admin';
+      if (!canAccess) {
         toast.error('Du har ikke tilgang til denne sesjonen');
         router.push('/dashboard/teacher');
         return;
@@ -43,7 +44,7 @@ export default function HostQuiz() {
       setSession(s);
     };
     loadSession();
-  }, [sessionId, user]);
+  }, [sessionId, user, userData]);
 
   useEffect(() => {
     if (!sessionId || !db) return;

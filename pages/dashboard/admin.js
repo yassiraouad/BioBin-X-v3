@@ -330,20 +330,34 @@ export default function AdminDashboard() {
           <div className="space-y-6">
             {/* Stats Grid */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              {[
-                { label: 'Totalt brukere', value: stats.totalUsers, icon: Users, color: 'bio' },
-                { label: 'Elever', value: stats.totalStudents, icon: GraduationCap, color: 'moss' },
-                { label: 'Lærere', value: stats.totalTeachers, icon: School, color: 'earth' },
-                { label: 'Klasser', value: stats.totalClasses, icon: BarChart2, color: 'bio' },
-              ].map(({ label, value, icon: Icon, color }) => (
-                <div key={label} className="bio-card p-5">
-                  <div className={`w-9 h-9 rounded-xl bg-${color}-500/15 flex items-center justify-center mb-3`}>
-                    <Icon size={18} className={`text-${color}-400`} />
-                  </div>
-                  <div className="font-display font-700 text-white text-2xl">{value || 0}</div>
-                  <div className="text-slate-500 text-xs font-body mt-1">{label}</div>
+              <div className="bio-card p-5">
+                <div className="w-9 h-9 rounded-xl bg-bio-500/15 flex items-center justify-center mb-3">
+                  <Users size={18} className="text-bio-400" />
                 </div>
-              ))}
+                <div className="font-display font-700 text-white text-2xl">{stats.totalUsers || 0}</div>
+                <div className="text-slate-500 text-xs font-body mt-1">Totalt brukere</div>
+              </div>
+              <div className="bio-card p-5">
+                <div className="w-9 h-9 rounded-xl bg-moss-500/15 flex items-center justify-center mb-3">
+                  <GraduationCap size={18} className="text-moss-400" />
+                </div>
+                <div className="font-display font-700 text-white text-2xl">{stats.totalStudents || 0}</div>
+                <div className="text-slate-500 text-xs font-body mt-1">Elever</div>
+              </div>
+              <div className="bio-card p-5">
+                <div className="w-9 h-9 rounded-xl bg-earth-500/15 flex items-center justify-center mb-3">
+                  <School size={18} className="text-earth-400" />
+                </div>
+                <div className="font-display font-700 text-white text-2xl">{stats.totalTeachers || 0}</div>
+                <div className="text-slate-500 text-xs font-body mt-1">Lærere</div>
+              </div>
+              <div className="bio-card p-5">
+                <div className="w-9 h-9 rounded-xl bg-bio-500/15 flex items-center justify-center mb-3">
+                  <BarChart2 size={18} className="text-bio-400" />
+                </div>
+                <div className="font-display font-700 text-white text-2xl">{stats.totalClasses || 0}</div>
+                <div className="text-slate-500 text-xs font-body mt-1">Klasser</div>
+              </div>
             </div>
 
             <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
