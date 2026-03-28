@@ -759,15 +759,6 @@ export function getEcoLevelProgress(points) {
   return Math.min(Math.max(progress, 0), 100);
 }
 
-export async function addEcoPoints(userId, points, reason) {
-  const userRef = doc(db, 'users', userId);
-  const userSnap = await getDoc(userRef);
-  if (!userSnap.exists()) return;
-  
-  const currentPoints = userSnap.data().ecoPoints || 0;
-  await updateDoc(userRef, { ecoPoints: currentPoints + points });
-}
-
 export async function addClassEcoPoints(classId, points) {
   const classRef = doc(db, 'classes', classId);
   const classSnap = await getDoc(classRef);

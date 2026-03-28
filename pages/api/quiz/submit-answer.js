@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { db, doc, getDoc, updateDoc, serverTimestamp } from '../../firebase/config';
+import { db, doc, getDoc, updateDoc, serverTimestamp } from '../../../firebase/config';
 
 const rateLimits = new Map();
 
