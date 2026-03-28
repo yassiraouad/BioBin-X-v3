@@ -16,6 +16,7 @@ export default function ScanPage() {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
+  const modelRef = useRef(null);
   const [cameraActive, setCameraActive] = useState(false);
   const [capturedImage, setCapturedImage] = useState(null);
   const [weight, setWeight] = useState('');
@@ -23,11 +24,16 @@ export default function ScanPage() {
   const [result, setResult] = useState(null);
   const [facingMode, setFacingMode] = useState('environment');
   const [aiAnalysis, setAiAnalysis] = useState(null);
+  const [aiError, setAiError] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [modelLoaded, setModelLoaded] = useState(false);
+  const [showManualInput, setShowManualInput] = useState(false);
 
   const startCamera = useCallback(async () => {
     try {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(t => t.stop());
+      }
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode, width: { ideal: 1280 }, height: { ideal: 720 } },
       });
@@ -38,15 +44,22 @@ export default function ScanPage() {
       }
     } catch (err) {
       toast.error('Kamera ikke tilgjengelig. Sjekk tillatelser.');
+      setShowManualInput(true);
     }
   }, [facingMode]);
 
   const stopCamera = useCallback(() => {
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(t => t.stop());
+      streamRef.current = null;
       setCameraActive(false);
     }
   }, []);
+
+  const toggleCamera = () => {
+    stopCamera();
+    setFacingMode(f => f === 'environment' ? 'user' : 'environment');
+  };
 
   useEffect(() => {
     if (!loading && !user && !isDemo) {
@@ -56,10 +69,36 @@ export default function ScanPage() {
 
   useEffect(() => {
     if (typeof window !== 'undefined' && (loading || !user) && !isDemo) return;
-    startCamera();
-    loadModel().then(() => setModelLoaded(true)).catch(console.error);
-    return () => stopCamera();
-  }, [startCamera, stopCamera, user, loading, isDemo]);
+    
+    const initCamera = () => {
+      startCamera();
+    };
+    
+    loadModel().then(model => {
+      modelRef.current = model;
+      setModelLoaded(true);
+      initCamera();
+    }).catch(err => {
+      console.error('Failed to load model:', err);
+      setModelLoaded(true);
+      setShowManualInput(true);
+    });
+    
+    return () => {
+      stopCamera();
+      if (modelRef.current && typeof modelRef.current.dispose === 'function') {
+        modelRef.current.dispose();
+        modelRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (cameraActive) {
+      stopCamera();
+      startCamera();
+    }
+  }, [facingMode]);
 
   const capturePhoto = async () => {
     if (!videoRef.current || !canvasRef.current) return;
@@ -70,6 +109,7 @@ export default function ScanPage() {
     canvas.getContext('2d').drawImage(video, 0, 0);
     const imageData = canvas.toDataURL('image/jpeg', 0.8);
     setCapturedImage(imageData);
+    setAiError(false);
     stopCamera();
 
     setAnalyzing(true);
@@ -78,7 +118,8 @@ export default function ScanPage() {
       setAiAnalysis(analysis);
     } catch (err) {
       console.error('AI analysis failed:', err);
-      setAiAnalysis({ isOrganic: true, confidence: 0.5, label: 'Analysis unavailable' });
+      setAiAnalysis({ isOrganic: true, confidence: 0, label: 'Kunne ikke analysere' });
+      setAiError(true);
     } finally {
       setAnalyzing(false);
     }
@@ -89,14 +130,21 @@ export default function ScanPage() {
     setResult(null);
     setWeight('');
     setAiAnalysis(null);
+    setAiError(false);
     startCamera();
   };
 
   const handleSave = async () => {
-    if (!weight || parseFloat(weight) <= 0) return toast.error('Skriv inn vekt (kg)');
+    const weightNum = parseFloat(weight);
+    if (!weight || isNaN(weightNum) || weightNum <= 0) {
+      return toast.error('Skriv inn en gyldig vekt større enn 0');
+    }
+    if (weightNum > 100) {
+      return toast.error('Vekten kan ikke være over 100 kg');
+    }
     if (!user && !isDemo) return;
 
-    if (aiAnalysis && !aiAnalysis.isOrganic) {
+    if (aiAnalysis && !aiAnalysis.isOrganic && !aiError) {
       toast.error('Dette ser ut til å være ikke-organisk avfall. BioBin godtar kun matavfall!');
       return;
     }

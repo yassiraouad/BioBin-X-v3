@@ -1,14 +1,20 @@
 import { auth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, db, doc, getDoc, setDoc, updateDoc, collection, getDocs, query, where, app } from './config';
 
-const ADMIN_EMAIL = process.env.NEXT_PUBLIC_ADMIN_EMAIL;
-const ADMIN_PASSWORD = process.env.NEXT_PUBLIC_ADMIN_PASSWORD;
-
 export async function registerUser({ name, email, password, role, classCode }) {
   if (!app || !auth || !db) {
     throw new Error('Firebase not configured');
   }
-  if (email === ADMIN_EMAIL) {
-    throw new Error('auth/email-not-allowed');
+  
+  if (!name || name.trim().length < 2) {
+    throw new Error('Navnet må være minst 2 tegn');
+  }
+  
+  if (!email || !email.includes('@')) {
+    throw new Error('Ugyldig e-postadresse');
+  }
+  
+  if (!password || password.length < 6) {
+    throw new Error('Passordet må være minst 6 tegn');
   }
 
   try {
@@ -26,9 +32,9 @@ export async function registerUser({ name, email, password, role, classCode }) {
     }
 
     const userData = {
-      name,
+      name: name.trim().substring(0, 100),
       email,
-      role,
+      role: role || 'student',
       classId,
       points: 0,
       totalWaste: 0,
@@ -51,6 +57,9 @@ export async function registerUser({ name, email, password, role, classCode }) {
     return { user: { uid: user.uid, ...userData }, classId };
   } catch (error) {
     console.error('Registration error:', error);
+    if (error.code === 'auth/email-already-in-use') {
+      throw new Error('E-posten er allerede i bruk');
+    }
     throw error;
   }
 }
@@ -59,51 +68,26 @@ export async function loginUser({ email, password }) {
   if (!app || !auth || !db) {
     throw new Error('Firebase not configured');
   }
-  if (email === ADMIN_EMAIL && password === ADMIN_PASSWORD) {
-    try {
-      let userCredential;
-      try {
-        userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      } catch (createError) {
-        if (createError.code === 'auth/email-already-in-use') {
-          userCredential = await signInWithEmailAndPassword(auth, email, password);
-        } else if (createError.code === 'auth/invalid-credential' || createError.code === 'auth/wrong-password') {
-          userCredential = await signInWithEmailAndPassword(auth, email, password);
-        } else {
-          throw createError;
-        }
-      }
-      const user = userCredential.user;
-      const adminUserData = {
-        uid: user.uid,
-        email: ADMIN_EMAIL,
-        name: 'Administrator',
-        role: 'admin',
-        classId: null,
-        points: 0,
-        totalWaste: 0,
-        badges: [],
-        createdAt: new Date().toISOString(),
-      };
-      await setDoc(doc(db, 'users', user.uid), adminUserData, { merge: true });
-      const userDoc = await getDoc(doc(db, 'users', user.uid));
-      if (userDoc.exists()) {
-        return { uid: userDoc.id, ...userDoc.data() };
-      }
-      return adminUserData;
-    } catch (error) {
-      console.error('Admin login error:', error);
-      throw error;
-    }
-  }
-
+  
   const userCredential = await signInWithEmailAndPassword(auth, email, password);
   const user = userCredential.user;
   const userDoc = await getDoc(doc(db, 'users', user.uid));
   
   if (userDoc.exists()) {
-    return { uid: userDoc.id, ...userDoc.data() };
+    const userData = userDoc.data();
+    
+    if (userData.role === 'admin') {
+      return { uid: userDoc.id, ...userData };
+    }
+    
+    const adminDoc = await getDoc(doc(db, 'admins', user.uid));
+    if (adminDoc.exists()) {
+      return { uid: userDoc.id, ...userData, role: 'admin' };
+    }
+    
+    return { uid: userDoc.id, ...userData };
   }
+  
   return { uid: user.uid, email: user.email };
 }
 
@@ -133,4 +117,18 @@ export function subscribeToAuth(callback) {
   return onAuthStateChanged(auth, callback);
 }
 
-export { ADMIN_EMAIL };
+export async function upgradeToAdmin(uid, email) {
+  if (!db) return false;
+  
+  const adminRef = doc(db, 'admins', uid);
+  await setDoc(adminRef, {
+    email,
+    role: 'admin',
+    addedAt: new Date().toISOString(),
+  }, { merge: true });
+  
+  const userRef = doc(db, 'users', uid);
+  await updateDoc(userRef, { role: 'admin' });
+  
+  return true;
+}

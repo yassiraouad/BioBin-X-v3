@@ -3,9 +3,10 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import { useAuth } from '../../hooks/useAuth';
 import Layout from '../../components/layout/Layout';
-import { getAdminStats, deleteUser, deleteClass, deleteWasteLog, updateUser, updateClass, getAllSchools, createSchool, deleteSchool, getAllGroups, createGroup, deleteGroup } from '../../firebase/db';
+import { getAdminStats, deleteUser, deleteClass, deleteWasteLog, updateUser, updateClass, getAllSchools, createSchool, deleteSchool, getAllGroups, createGroup, deleteGroup, getAdmins, addAdmin, removeAdmin, getAllAdminUsers } from '../../firebase/db';
+import { doc, setDoc, db } from '../../firebase/config';
 import { calculateEnergy, calculateCO2Saved } from '../../utils/calculator';
-import { Shield, Users, GraduationCap, School, Leaf, Trash2, Edit2, X, Check, BarChart2, Plus, Building2, Copy, UsersRound } from 'lucide-react';
+import { Shield, Users, GraduationCap, School, Leaf, Trash2, Edit2, X, Check, BarChart2, Plus, Building2, Copy, UsersRound, UserPlus } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
@@ -26,6 +27,12 @@ export default function AdminDashboard() {
   const [newGroupName, setNewGroupName] = useState('');
   const [newGroupSchool, setNewGroupSchool] = useState('');
   const [creatingGroup, setCreatingGroup] = useState(false);
+  const [admins, setAdmins] = useState([]);
+  const [showAddAdminModal, setShowAddAdminModal] = useState(false);
+  const [newAdminEmail, setNewAdminEmail] = useState('');
+  const [newAdminName, setNewAdminName] = useState('');
+  const [newAdminPassword, setNewAdminPassword] = useState('');
+  const [addingAdmin, setAddingAdmin] = useState(false);
 
   useEffect(() => {
     if (!loading && (!user || userData?.role !== 'admin')) {
@@ -81,6 +88,9 @@ export default function AdminDashboard() {
     }
     if (activeTab === 'grupper') {
       loadGroups();
+    }
+    if (activeTab === 'admins') {
+      loadAdmins();
     }
   }, [activeTab]);
 
@@ -195,12 +205,76 @@ export default function AdminDashboard() {
     }
   };
 
+  const loadAdmins = async () => {
+    try {
+      const adminList = await getAllAdminUsers();
+      setAdmins(adminList);
+    } catch (err) {
+      console.error('Error loading admins:', err);
+    }
+  };
+
+  const handleAddAdmin = async () => {
+    if (!newAdminEmail || !newAdminPassword) {
+      return toast.error('Fyll inn e-post og passord');
+    }
+    setAddingAdmin(true);
+    try {
+      const { createUserWithEmailAndPassword } = await import('firebase/auth');
+      const { auth } = await import('../../firebase/config');
+      
+      const userCredential = await createUserWithEmailAndPassword(auth, newAdminEmail, newAdminPassword);
+      const user = userCredential.user;
+      
+      await setDoc(doc(db, 'users', user.uid), {
+        name: newAdminName || newAdminEmail.split('@')[0],
+        email: newAdminEmail,
+        role: 'admin',
+        classId: null,
+        points: 0,
+        totalWaste: 0,
+        badges: [],
+        createdAt: new Date().toISOString(),
+      });
+      
+      await addAdmin(user.uid, newAdminEmail, newAdminName || newAdminEmail.split('@')[0]);
+      
+      toast.success('Admin lagt til!');
+      setShowAddAdminModal(false);
+      setNewAdminEmail('');
+      setNewAdminName('');
+      setNewAdminPassword('');
+      loadAdmins();
+    } catch (err) {
+      console.error(err);
+      if (err.code === 'auth/email-already-in-use') {
+        toast.error('E-posten er allerede i bruk');
+      } else {
+        toast.error('Kunne ikke legge til admin');
+      }
+    } finally {
+      setAddingAdmin(false);
+    }
+  };
+
+  const handleRemoveAdmin = async (uid) => {
+    if (!confirm('Er du sikker på at du vil fjerne denne adminen?')) return;
+    try {
+      await removeAdmin(uid);
+      toast.success('Admin fjernet');
+      loadAdmins();
+    } catch (err) {
+      toast.error('Kunne ikke fjerne admin');
+    }
+  };
+
   if (loading || !userData) {
     return <div className="min-h-screen bg-dark-900 flex items-center justify-center"><div className="w-10 h-10 border-2 border-bio-500/30 border-t-bio-500 rounded-full animate-spin" /></div>;
   }
 
   const tabs = [
     { id: 'overview', label: 'Oversikt' },
+    { id: 'admins', label: 'Administratorer' },
     { id: 'skoler', label: 'Skoler' },
     { id: 'grupper', label: 'Grupper' },
     { id: 'users', label: 'Brukere' },
@@ -309,6 +383,49 @@ export default function AdminDashboard() {
           </div>
         )}
 
+        {activeTab === 'admins' && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <h2 className="font-display font-700 text-white text-xl">Administratorer</h2>
+              <button onClick={() => setShowAddAdminModal(true)} className="btn-primary flex items-center gap-2 text-sm">
+                <UserPlus size={16} /> Legg til admin
+              </button>
+            </div>
+            
+            <div className="bio-card overflow-hidden">
+              {admins.length === 0 ? (
+                <div className="text-center py-12 text-slate-500">
+                  <Shield size={48} className="mx-auto mb-3 opacity-50" />
+                  <p className="font-body">Ingen administratorer ennå</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-white/5">
+                  {admins.map(admin => (
+                    <div key={admin.uid} className="flex items-center gap-4 p-4 hover:bg-white/3">
+                      <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-red-500 to-red-700 flex items-center justify-center text-white font-display font-700 text-sm">
+                        {admin.name?.[0]?.toUpperCase() || admin.email?.[0]?.toUpperCase() || '?'}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-white text-sm font-body font-500">{admin.name || 'Admin'}</div>
+                        <div className="text-slate-500 text-xs font-body">{admin.email}</div>
+                      </div>
+                      {admin.email !== process.env.NEXT_PUBLIC_ADMIN_EMAIL && (
+                        <button
+                          onClick={() => handleRemoveAdmin(admin.uid)}
+                          className="p-2 text-slate-500 hover:text-red-400 transition-colors"
+                          title="Fjern admin"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {activeTab === 'grupper' && (
           <div className="space-y-6">
             <div className="flex items-center justify-between">
@@ -349,7 +466,7 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {activeTab === 'users' && stats && (
+        {activeTab === 'skoler' && (
           <div className="space-y-6">
             <div className="flex items-center justify-between">
               <h2 className="font-display font-700 text-white text-xl">Skoler</h2>
@@ -724,6 +841,55 @@ export default function AdminDashboard() {
               </div>
               <button onClick={handleCreateGroup} disabled={creatingGroup || !newGroupSchool} className="btn-primary w-full flex items-center justify-center gap-2 py-4">
                 {creatingGroup ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <><Plus size={16} /> Opprett gruppe</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showAddAdminModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-6">
+          <div className="bio-card p-8 w-full max-w-md animate-slide-up">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="font-display font-700 text-white text-xl">Legg til administrator</h2>
+              <button onClick={() => setShowAddAdminModal(false)} className="text-slate-500 hover:text-white transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="text-slate-300 text-sm font-body font-500 block mb-2">Navn</label>
+                <input
+                  type="text"
+                  value={newAdminName}
+                  onChange={e => setNewAdminName(e.target.value)}
+                  placeholder="F.eks. Per Hansen"
+                  className="bio-input"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="text-slate-300 text-sm font-body font-500 block mb-2">E-post</label>
+                <input
+                  type="email"
+                  value={newAdminEmail}
+                  onChange={e => setNewAdminEmail(e.target.value)}
+                  placeholder="admin@eksempel.no"
+                  className="bio-input"
+                />
+              </div>
+              <div>
+                <label className="text-slate-300 text-sm font-body font-500 block mb-2">Passord</label>
+                <input
+                  type="password"
+                  value={newAdminPassword}
+                  onChange={e => setNewAdminPassword(e.target.value)}
+                  placeholder="Minst 6 tegn"
+                  className="bio-input"
+                />
+              </div>
+              <button onClick={handleAddAdmin} disabled={addingAdmin} className="btn-primary w-full flex items-center justify-center gap-2 py-4">
+                {addingAdmin ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <><UserPlus size={16} /> Opprett admin</>}
               </button>
             </div>
           </div>

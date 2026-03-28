@@ -1,4 +1,4 @@
-import { db, collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, query, where, orderBy, limit, addDoc, serverTimestamp, app } from './config';
+import { db, collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, query, where, orderBy, limit, addDoc, serverTimestamp, app, runTransaction } from './config';
 
 function ensureFirebase() {
   if (!app || !db) {
@@ -17,6 +17,14 @@ export async function logWaste({ userId, weight, imageUrl, classId, aiClassifica
   const logsRef = collection(db, 'waste_logs');
 
   const weightNum = parseFloat(weight);
+  
+  if (isNaN(weightNum) || weightNum <= 0) {
+    throw new Error('Ugyldig vekt');
+  }
+  if (weightNum > 100) {
+    throw new Error('Vekten er for høy');
+  }
+  
   const points = Math.round(weightNum * 10);
   const energyKwh = weightNum * 0.5;
   const co2Saved = weightNum * 0.8;
@@ -36,27 +44,29 @@ export async function logWaste({ userId, weight, imageUrl, classId, aiClassifica
 
   const docRef = await addDoc(logsRef, logData);
 
-  const userRef = doc(db, 'users', userId);
-  const userSnap = await getDoc(userRef);
-  if (userSnap.exists()) {
-    const userData = userSnap.data();
-    await updateDoc(userRef, {
-      points: (userData.points || 0) + points,
-      totalWaste: (userData.totalWaste || 0) + weightNum,
-    });
-  }
-
-  if (classId) {
-    const classRef = doc(db, 'classes', classId);
-    const classSnap = await getDoc(classRef);
-    if (classSnap.exists()) {
-      const classData = classSnap.data();
-      await updateDoc(classRef, {
-        totalWaste: (classData.totalWaste || 0) + weightNum,
-        totalPoints: (classData.totalPoints || 0) + points,
+  await runTransaction(db, async (transaction) => {
+    const userRef = doc(db, 'users', userId);
+    const userSnap = await transaction.get(userRef);
+    if (userSnap.exists()) {
+      const userData = userSnap.data();
+      transaction.update(userRef, {
+        points: (userData.points || 0) + points,
+        totalWaste: (userData.totalWaste || 0) + weightNum,
       });
     }
-  }
+
+    if (classId) {
+      const classRef = doc(db, 'classes', classId);
+      const classSnap = await transaction.get(classRef);
+      if (classSnap.exists()) {
+        const classData = classSnap.data();
+        transaction.update(classRef, {
+          totalWaste: (classData.totalWaste || 0) + weightNum,
+          totalPoints: (classData.totalPoints || 0) + points,
+        });
+      }
+    }
+  });
 
   const goalResult = await checkAndAwardGoalPoints(userId, classId);
   let classGoalResult = null;
@@ -129,22 +139,30 @@ export async function getTeacherClasses(teacherId) {
   const snapshot = await getDocs(q);
   const classes = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
   
-  for (const cls of classes) {
-    if (cls.schoolId) {
-      const schoolDoc = await getDoc(doc(db, 'schools', cls.schoolId));
-      if (schoolDoc.exists()) {
-        cls.schoolName = schoolDoc.data().name;
-      }
-    }
-    if (cls.groupId) {
-      const groupDoc = await getDoc(doc(db, 'groups', cls.groupId));
-      if (groupDoc.exists()) {
-        cls.groupName = groupDoc.data().name;
-      }
-    }
-  }
+  const schoolIds = [...new Set(classes.filter(c => c.schoolId).map(c => c.schoolId))];
+  const groupIds = [...new Set(classes.filter(c => c.groupId).map(c => c.groupId))];
   
-  return classes;
+  const schoolDocs = await Promise.all(schoolIds.map(id => getDoc(doc(db, 'schools', id))));
+  const schoolMap = {};
+  schoolDocs.forEach((doc, i) => {
+    if (doc.exists()) {
+      schoolMap[schoolIds[i]] = doc.data().name;
+    }
+  });
+  
+  const groupDocs = await Promise.all(groupIds.map(id => getDoc(doc(db, 'groups', id))));
+  const groupMap = {};
+  groupDocs.forEach((doc, i) => {
+    if (doc.exists()) {
+      groupMap[groupIds[i]] = doc.data().name;
+    }
+  });
+  
+  return classes.map(cls => ({
+    ...cls,
+    schoolName: cls.schoolId ? schoolMap[cls.schoolId] : null,
+    groupName: cls.groupId ? groupMap[cls.groupId] : null,
+  }));
 }
 
 export async function getClassStudents(classId) {
@@ -1922,4 +1940,381 @@ export async function awardSeasonalBadge(userId, badgeId) {
   if (badges.includes(badgeId)) return;
   
   await updateDoc(userRef, { badges: [...badges, badgeId] });
+}
+
+async function generateUniquePIN(maxAttempts = 10) {
+  for (let i = 0; i < maxAttempts; i++) {
+    const pin = Math.floor(100000 + Math.random() * 900000).toString();
+    const sessionsRef = collection(db, 'liveSessions');
+    const q = query(sessionsRef, where('pin', '==', pin), where('status', 'in', ['lobby', 'question', 'results']));
+    const snapshot = await getDocs(q);
+    if (snapshot.empty) {
+      return pin;
+    }
+  }
+  throw new Error('Kunne ikke generere unik PIN');
+}
+
+export async function createLiveSession({ teacherUid, classId, questions, prizes, timeLimit }) {
+  ensureFirebase();
+  const pin = await generateUniquePIN();
+  
+  const sessionData = {
+    classId,
+    teacherUid,
+    pin,
+    status: 'lobby',
+    currentQuestionIndex: -1,
+    questions: questions.map((q, i) => ({
+      ...q,
+      timeLimit: timeLimit || 20,
+    })),
+    prizes: prizes || { first: 100, second: 75, third: 50 },
+    createdAt: serverTimestamp(),
+    startedAt: null,
+    finishedAt: null,
+    questionStartedAt: null,
+  };
+  
+  const docRef = await addDoc(collection(db, 'liveSessions'), sessionData);
+  return { sessionId: docRef.id, pin };
+}
+
+export async function getLiveSessionByPIN(pin) {
+  ensureFirebase();
+  const sessionsRef = collection(db, 'liveSessions');
+  const q = query(sessionsRef, where('pin', '==', pin), where('status', 'in', ['lobby', 'question', 'results']));
+  const snapshot = await getDocs(q);
+  if (snapshot.empty) return null;
+  return { id: snapshot.docs[0].id, ...snapshot.docs[0].data() };
+}
+
+export async function getLiveSession(sessionId) {
+  ensureFirebase();
+  const sessionDoc = await getDoc(doc(db, 'liveSessions', sessionId));
+  if (!sessionDoc.exists()) return null;
+  return { id: sessionDoc.id, ...sessionDoc.data() };
+}
+
+export async function joinLiveSession({ sessionId, uid, displayName }) {
+  ensureFirebase();
+  const playerRef = doc(db, 'liveSessions', sessionId, 'players', uid);
+  const playerSnap = await getDoc(playerRef);
+  
+  const playerData = {
+    uid,
+    displayName,
+    totalScore: playerSnap.exists() ? playerSnap.data().totalScore : 0,
+    answers: playerSnap.exists() ? playerSnap.data().answers : [],
+    joinedAt: serverTimestamp(),
+  };
+  
+  await setDoc(playerRef, playerData, { merge: true });
+  return playerData;
+}
+
+export async function submitAnswer({ sessionId, uid, questionIndex, answerIndex, timeMs }) {
+  ensureFirebase();
+  const session = await getLiveSession(sessionId);
+  if (!session) throw new Error('Session not found');
+  
+  const question = session.questions[questionIndex];
+  const correct = answerIndex === question.correctIndex;
+  
+  let pointsEarned = 0;
+  if (correct) {
+    const maxTime = question.timeLimit * 1000;
+    const timeBonus = Math.max(0, 1 - (timeMs / maxTime));
+    pointsEarned = Math.round(500 + (500 * timeBonus));
+  }
+  
+  const playerRef = doc(db, 'liveSessions', sessionId, 'players', uid);
+  const playerSnap = await getDoc(playerRef);
+  const playerData = playerSnap.exists() ? playerSnap.data() : { answers: [], totalScore: 0 };
+  
+  const existingAnswerIdx = playerData.answers.findIndex(a => a.questionIndex === questionIndex);
+  const newAnswers = [...playerData.answers];
+  
+  if (existingAnswerIdx >= 0) {
+    if (pointsEarned > (newAnswers[existingAnswerIdx].pointsEarned || 0)) {
+      newAnswers[existingAnswerIdx] = { questionIndex, answerIndex, correct, timeMs, pointsEarned };
+    }
+  } else {
+    newAnswers.push({ questionIndex, answerIndex, correct, timeMs, pointsEarned });
+  }
+  
+  const totalScore = newAnswers.reduce((s, a) => s + (a.pointsEarned || 0), 0);
+  
+  await updateDoc(playerRef, { answers: newAnswers, totalScore });
+  
+  return { correct, pointsEarned, totalScore };
+}
+
+export async function getSessionPlayers(sessionId) {
+  ensureFirebase();
+  const playersRef = collection(db, 'liveSessions', sessionId, 'players');
+  const snapshot = await getDocs(playersRef);
+  return snapshot.docs.map(d => ({ uid: d.id, ...d.data() }));
+}
+
+export async function updateSessionStatus(sessionId, status, additionalData = {}) {
+  ensureFirebase();
+  const updateData = { status, ...additionalData };
+  if (status === 'question' && !additionalData.startedAt) {
+    updateData.startedAt = serverTimestamp();
+  }
+  if (status === 'finished') {
+    updateData.finishedAt = serverTimestamp();
+  }
+  await updateDoc(doc(db, 'liveSessions', sessionId), updateData);
+}
+
+export async function startQuestion(sessionId, questionIndex) {
+  ensureFirebase();
+  await updateDoc(doc(db, 'liveSessions', sessionId), {
+    status: 'question',
+    currentQuestionIndex: questionIndex,
+    questionStartedAt: serverTimestamp(),
+  });
+}
+
+export async function showResults(sessionId) {
+  ensureFirebase();
+  await updateDoc(doc(db, 'liveSessions', sessionId), { status: 'results' });
+}
+
+export async function endQuiz(sessionId) {
+  ensureFirebase();
+  const session = await getLiveSession(sessionId);
+  if (!session) return;
+  
+  const players = await getSessionPlayers(sessionId);
+  const sortedPlayers = players.sort((a, b) => b.totalScore - a.totalScore);
+  
+  const top3 = sortedPlayers.slice(0, 3);
+  
+  for (let i = 0; i < top3.length; i++) {
+    const player = top3[i];
+    const prizeAmount = i === 0 ? session.prizes.first : i === 1 ? session.prizes.second : session.prizes.third;
+    
+    if (prizeAmount > 0) {
+      const userRef = doc(db, 'users', player.uid);
+      const userSnap = await getDoc(userRef);
+      if (userSnap.exists()) {
+        const currentEcoPoints = userSnap.data().ecoPoints || 0;
+        await updateDoc(userRef, { ecoPoints: currentEcoPoints + prizeAmount });
+      }
+    }
+  }
+  
+  await updateDoc(doc(db, 'liveSessions', sessionId), {
+    status: 'finished',
+    finishedAt: serverTimestamp(),
+    finalRankings: sortedPlayers.slice(0, 10).map((p, i) => ({
+      rank: i + 1,
+      uid: p.uid,
+      displayName: p.displayName,
+      totalScore: p.totalScore,
+      prize: i < 3 ? (i === 0 ? session.prizes.first : i === 1 ? session.prizes.second : session.prizes.third) : 0,
+    })),
+  });
+  
+  return top3;
+}
+
+export async function getLeaderboardRank(userId, classId = null) {
+  ensureFirebase();
+  const usersRef = collection(db, 'users');
+  let q;
+  if (classId) {
+    q = query(usersRef, where('role', '==', 'student'), where('classId', '==', classId), orderBy('ecoPoints', 'desc'));
+  } else {
+    q = query(usersRef, where('role', '==', 'student'), orderBy('ecoPoints', 'desc'));
+  }
+  const snapshot = await getDocs(q);
+  const users = snapshot.docs.map(d => ({ uid: d.id, ...d.data() }));
+  const rank = users.findIndex(u => u.uid === userId) + 1;
+  return { rank, total: users.length };
+}
+
+export async function createQuizNotification({ classId, teacherUid, teacherName, sessionId, pin }) {
+  ensureFirebase();
+  const students = await getClassStudents(classId);
+  
+  for (const student of students) {
+    await addDoc(collection(db, 'notifications'), {
+      userId: student.uid,
+      message: `🎮 ${teacherName} har startet en live quiz! PIN: ${pin}`,
+      type: 'quiz_invite',
+      sessionId,
+      pin,
+      read: false,
+      createdAt: serverTimestamp(),
+    });
+  }
+}
+
+export async function getQuizQuestionTemplates() {
+  ensureFirebase();
+  const questionsRef = collection(db, 'quizTemplates');
+  const snapshot = await getDocs(questionsRef);
+  return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+export async function saveQuizTemplate(teacherUid, questions) {
+  ensureFirebase();
+  const docRef = await addDoc(collection(db, 'quizTemplates'), {
+    teacherUid,
+    questions,
+    createdAt: serverTimestamp(),
+    usedCount: 0,
+  });
+  return docRef.id;
+}
+
+export async function addEcoPoints(userId, amount) {
+  ensureFirebase();
+  const userRef = doc(db, 'users', userId);
+  const userSnap = await getDoc(userRef);
+  if (!userSnap.exists()) return;
+  
+  const currentPoints = userSnap.data().ecoPoints || 0;
+  await updateDoc(userRef, { ecoPoints: currentPoints + amount });
+  
+  return currentPoints + amount;
+}
+
+export async function addActivityFeedEntry(userId, message, type = 'quiz_win', points = 0) {
+  ensureFirebase();
+  await addDoc(collection(db, 'activityFeed'), {
+    userId,
+    message,
+    type,
+    points,
+    createdAt: serverTimestamp(),
+  });
+}
+
+export async function getAdmins() {
+  ensureFirebase();
+  const adminsRef = collection(db, 'admins');
+  const snapshot = await getDocs(adminsRef);
+  return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+export async function isAdmin(uid) {
+  ensureFirebase();
+  const adminDoc = await getDoc(doc(db, 'admins', uid));
+  return adminDoc.exists();
+}
+
+export async function addAdmin(uid, email, name) {
+  ensureFirebase();
+  await setDoc(doc(db, 'admins', uid), {
+    email,
+    name: name || 'Administrator',
+    addedAt: serverTimestamp(),
+    addedBy: null,
+  });
+}
+
+export async function removeAdmin(uid) {
+  ensureFirebase();
+  await deleteDoc(doc(db, 'admins', uid));
+}
+
+export async function getAllAdminUsers() {
+  ensureFirebase();
+  const usersRef = collection(db, 'users');
+  const q = query(usersRef, where('role', '==', 'admin'));
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map(d => ({ uid: d.id, ...d.data() }));
+}
+
+export async function getQuizHistory(teacherUid = null, limitCount = 50) {
+  ensureFirebase();
+  const sessionsRef = collection(db, 'liveSessions');
+  let q;
+  if (teacherUid) {
+    q = query(sessionsRef, where('teacherUid', '==', teacherUid), where('status', '==', 'finished'), orderBy('finishedAt', 'desc'), limit(limitCount));
+  } else {
+    q = query(sessionsRef, where('status', '==', 'finished'), orderBy('finishedAt', 'desc'), limit(limitCount));
+  }
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map(d => {
+    const data = d.data();
+    return {
+      id: d.id,
+      classId: data.classId,
+      teacherUid: data.teacherUid,
+      pin: data.pin,
+      questionsCount: data.questions?.length || 0,
+      prizes: data.prizes,
+      createdAt: data.createdAt,
+      startedAt: data.startedAt,
+      finishedAt: data.finishedAt,
+      finalRankings: data.finalRankings || [],
+    };
+  });
+}
+
+export async function getQuizHistoryForClass(classId) {
+  ensureFirebase();
+  const sessionsRef = collection(db, 'liveSessions');
+  const q = query(
+    sessionsRef, 
+    where('classId', '==', classId), 
+    where('status', '==', 'finished'), 
+    orderBy('finishedAt', 'desc'),
+    limit(20)
+  );
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map(d => {
+    const data = d.data();
+    return {
+      id: d.id,
+      questionsCount: data.questions?.length || 0,
+      prizes: data.prizes,
+      finishedAt: data.finishedAt,
+      finalRankings: data.finalRankings || [],
+      winner: data.finalRankings?.[0] || null,
+    };
+  });
+}
+
+export async function getQuizHistoryForStudent(studentUid) {
+  ensureFirebase();
+  const sessionsRef = collection(db, 'liveSessions');
+  const q = query(
+    sessionsRef, 
+    where('status', '==', 'finished'), 
+    orderBy('finishedAt', 'desc'),
+    limit(20)
+  );
+  const snapshot = await getDocs(q);
+  const history = [];
+  
+  for (const docSnap of snapshot.docs) {
+    const data = docSnap.data();
+    const playerRef = doc(db, 'liveSessions', docSnap.id, 'players', studentUid);
+    const playerSnap = await getDoc(playerRef);
+    
+    if (playerSnap.exists()) {
+      const playerData = playerSnap.data();
+      const rankings = data.finalRankings || [];
+      const myRank = rankings.findIndex(r => r.uid === studentUid) + 1;
+      
+      history.push({
+        id: docSnap.id,
+        questionsCount: data.questions?.length || 0,
+        prizes: data.prizes,
+        finishedAt: data.finishedAt,
+        myScore: playerData.totalScore || 0,
+        myRank: myRank || null,
+        participated: true,
+      });
+    }
+  }
+  
+  return history;
 }

@@ -5,8 +5,8 @@ import Link from 'next/link';
 import { useAuth } from '../../hooks/useAuth';
 import Layout from '../../components/layout/Layout';
 import { getTeacherClasses, getClassStudents, getClassLogs, createClass, setClassWeeklyGoal, getWeeklyWaste, getSchoolByCode, getAllSchools, getSchoolGroups, getBinsByTeacher, getAllBinsHealth, setClassWeeklyGoalKg } from '../../firebase/db';
-import { calculateEnergy, calculateCO2Saved } from '../../utils/calculator';
-import { Users, Leaf, Zap, Wind, Plus, Copy, X, BarChart2, Trophy, Target, CheckCircle, Trash2, Scale } from 'lucide-react';
+import { calculateEnergy, calculateCO2Saved, exportLogsToCSV, exportStudentsToCSV, exportClassStatsToCSV } from '../../utils/calculator';
+import { Users, Leaf, Zap, Wind, Plus, Copy, X, BarChart2, Trophy, Target, CheckCircle, Trash2, Scale, Brain, Download } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import AddBinModal from '../../components/AddBinModal';
@@ -109,10 +109,15 @@ export default function TeacherDashboard() {
 
   const handleCreateClass = async () => {
     if (!newClassName.trim()) return toast.error('Skriv inn klassenavn');
+    if (newClassName.trim().length > 50) return toast.error('Klassenavnet er for langt');
     if (!selectedSchool) return toast.error('Velg en skole');
+    
+    const exists = classes.some(c => c.name.toLowerCase() === newClassName.trim().toLowerCase());
+    if (exists) return toast.error('En klasse med dette navnet eksisterer allerede');
+    
     setCreating(true);
     try {
-      const result = await createClass({ name: newClassName, teacherId: user.uid, schoolId: selectedSchool, groupId: selectedGroup || null });
+      const result = await createClass({ name: newClassName.trim(), teacherId: user.uid, schoolId: selectedSchool, groupId: selectedGroup || null });
       console.log('Class created:', result);
       toast.success(`Klasse opprettet! Kode: ${result.code} 🎉`);
       const cls = await getTeacherClasses(user.uid);
@@ -156,10 +161,16 @@ export default function TeacherDashboard() {
   const co2 = calculateCO2Saved(classStats.totalWaste);
 
   // Build student bar chart data
+  const truncateName = (name) => {
+    if (!name) return 'Ukjent';
+    const firstName = name.split(' ')[0] || name;
+    return firstName.length > 12 ? firstName.substring(0, 12) + '...' : firstName;
+  };
+  
   const studentChartData = classStats.students
     .sort((a, b) => (b.points || 0) - (a.points || 0))
     .slice(0, 8)
-    .map(s => ({ name: s.name?.split(' ')[0] || 'Ukjent', poeng: s.points || 0 }));
+    .map(s => ({ name: truncateName(s.name), poeng: s.points || 0 }));
 
   return (
     <Layout>
@@ -200,6 +211,20 @@ export default function TeacherDashboard() {
             >
               <Sparkles size={16} />
               AI-assistent
+            </button>
+            <button
+              onClick={() => router.push('/quiz/create')}
+              className="btn-primary flex items-center gap-2 text-sm bg-bio-600"
+            >
+              <Brain size={16} />
+              Live quiz
+            </button>
+            <button
+              onClick={() => router.push('/quiz/history')}
+              className="btn-primary flex items-center gap-2 text-sm"
+            >
+              <Trophy size={16} />
+              Quiz-hist.
             </button>
           </div>
         </div>
@@ -359,7 +384,33 @@ export default function TeacherDashboard() {
             <div className="bio-card p-6">
               <div className="flex items-center justify-between mb-5">
                 <h2 className="font-display font-700 text-white text-lg">Elevliste</h2>
-                <span className="text-slate-500 text-sm font-body">{classStats.students.length} elever</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-slate-500 text-sm font-body">{classStats.students.length} elever</span>
+                  {classStats.students.length > 0 && (
+                    <>
+                      <button
+                        onClick={() => {
+                          exportStudentsToCSV(classStats.students);
+                          toast.success('Elever eksportert');
+                        }}
+                        className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-colors"
+                        title="Eksporter elever"
+                      >
+                        <Download size={16} />
+                      </button>
+                      <button
+                        onClick={() => {
+                          exportLogsToCSV(classStats.logs);
+                          toast.success('Logg eksportert');
+                        }}
+                        className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-colors"
+                        title="Eksporter avfallslogg"
+                      >
+                        <Leaf size={16} />
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
               {classStats.students.length === 0 ? (
                 <div className="text-center py-8 text-slate-500 font-body">

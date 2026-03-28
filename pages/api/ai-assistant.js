@@ -1,32 +1,81 @@
+const rateLimits = new Map();
+
+function checkRateLimit(key, maxRequests = 20, windowMs = 60000) {
+  const now = Date.now();
+  const record = rateLimits.get(key) || { count: 0, resetAt: now + windowMs };
+  
+  if (now > record.resetAt) {
+    record.count = 0;
+    record.resetAt = now + windowMs;
+  }
+  
+  record.count++;
+  rateLimits.set(key, record);
+  
+  return record.count <= maxRequests;
+}
+
+function sanitizeHTML(str) {
+  if (typeof str !== 'string') return '';
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;');
+}
+
+const SYSTEM_PROMPTS = {
+  teacher: `Du er en hjelpsom AI-assistent for BioBin X, et miljø-app for skoler.
+Du hjelper lærere med å analysere klassestatistikk, elevprestasjoner og søppeldata.
+Svar alltid på norsk. Vær vennlig og profesjonell.
+Ikke oppgi falsk informasjon. Hvis du er usikker, si ifra.`,
+  
+  admin: `Du er en AI-assistent for BioBin X admin-dashboard.
+Du hjelper med å forstå systemstatistikk og rapporter.
+Svar alltid på norsk. Vær vennlig og profesjonell.`
+};
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  try {
-    const { message, systemPrompt } = req.body;
-    
-    const apiKey = process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY;
-    
-    if (!apiKey) {
-      return res.status(200).json({ 
-        response: 'AI-assistenten er ikke konfigurert. Kontakt administrator for å sette opp API-nøkkel.' 
-      });
-    }
+  const { message, role = 'teacher' } = req.body;
 
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+  if (!message || typeof message !== 'string') {
+    return res.status(400).json({ error: 'Missing message' });
+  }
+
+  const ip = req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown';
+  if (!checkRateLimit(`ai_${ip}`, 20, 60000)) {
+    return res.status(429).json({ error: 'For mange forespørsler. Prøv igjen om et øyeblikk.' });
+  }
+
+  const apiKey = process.env.GROQ_API_KEY;
+  
+  if (!apiKey) {
+    return res.status(200).json({ 
+      response: 'AI-assistenten er ikke konfigurert. Kontakt administrator for å sette opp API-nøkkel.' 
+    });
+  }
+
+  const sanitizedMessage = message.trim().substring(0, 1000);
+  const systemPrompt = SYSTEM_PROMPTS[role] || SYSTEM_PROMPTS.teacher;
+
+  try {
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01'
+        'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: 'claude-3-sonnet-20240229',
+        model: 'llama-3.1-8b-instant',
         max_tokens: 500,
-        system: systemPrompt,
         messages: [
-          { role: 'user', content: message }
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: sanitizedMessage }
         ]
       })
     });
@@ -36,7 +85,9 @@ export default async function handler(req, res) {
     }
 
     const data = await response.json();
-    const reply = data.content[0]?.text || 'Kunne ikke få svar fra AI';
+    let reply = data.choices?.[0]?.message?.content || 'Kunne ikke få svar fra AI';
+    
+    reply = sanitizeHTML(reply);
 
     res.status(200).json({ response: reply });
   } catch (error) {
