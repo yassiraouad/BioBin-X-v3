@@ -3,10 +3,10 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import { useAuth } from '../../hooks/useAuth';
 import Layout from '../../components/layout/Layout';
-import { getAdminStats, deleteUser, deleteClass, deleteWasteLog, updateUser, updateClass, getAllSchools, createSchool, deleteSchool, getAllGroups, createGroup, deleteGroup, getAdmins, addAdmin, removeAdmin, getAllAdminUsers } from '../../firebase/db';
+import { getAdminStats, deleteUser, deleteClass, deleteWasteLog, updateUser, updateClass, getAllSchools, createSchool, deleteSchool, getAllGroups, createGroup, deleteGroup, getAdmins, addAdmin, removeAdmin, getAllAdminUsers, addBonusPointsToUser, addBonusPointsToClass, resetUserPoints, resetClassPoints, resetAllPoints, resetAllWaste, deleteAllUsers, deleteAllClasses, getTeacherClasses } from '../../firebase/db';
 import { doc, setDoc, db } from '../../firebase/config';
 import { calculateEnergy, calculateCO2Saved } from '../../utils/calculator';
-import { Shield, Users, GraduationCap, School, Leaf, Trash2, Edit2, X, Check, BarChart2, Plus, Building2, Copy, UsersRound, UserPlus } from 'lucide-react';
+import { Shield, Users, GraduationCap, School, Leaf, Trash2, Edit2, X, Check, BarChart2, Plus, Building2, Copy, UsersRound, UserPlus, Gift, RotateCcw, Zap, Bomb, Skull, Crown, Sparkles } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
@@ -33,6 +33,13 @@ export default function AdminDashboard() {
   const [newAdminName, setNewAdminName] = useState('');
   const [newAdminPassword, setNewAdminPassword] = useState('');
   const [addingAdmin, setAddingAdmin] = useState(false);
+  const [bonusPointsAmount, setBonusPointsAmount] = useState(100);
+  const [bonusPointsReason, setBonusPointsReason] = useState('');
+  const [selectedUserForBonus, setSelectedUserForBonus] = useState('');
+  const [selectedClassForBonus, setSelectedClassForBonus] = useState('');
+  const [applyingBonus, setApplyingBonus] = useState(false);
+  const [debugMode, setDebugMode] = useState(false);
+  const [classes, setClasses] = useState([]);
 
   useEffect(() => {
     if (!loading && (!user || userData?.role !== 'admin')) {
@@ -91,6 +98,9 @@ export default function AdminDashboard() {
     }
     if (activeTab === 'admins') {
       loadAdmins();
+    }
+    if (activeTab === 'tools') {
+      loadStats();
     }
   }, [activeTab]);
 
@@ -268,6 +278,117 @@ export default function AdminDashboard() {
     }
   };
 
+  const handleGiveBonusToUser = async () => {
+    if (!selectedUserForBonus) return toast.error('Velg en bruker');
+    if (!bonusPointsAmount || bonusPointsAmount <= 0) return toast.error('Skriv inn gyldig poengsum');
+    
+    setApplyingBonus(true);
+    try {
+      const user = stats?.students?.find(s => s.uid === selectedUserForBonus) || 
+                   stats?.teachers?.find(t => t.uid === selectedUserForBonus);
+      const reason = bonusPointsReason || 'Bonus fra admin';
+      await addBonusPointsToUser(selectedUserForBonus, bonusPointsAmount, reason);
+      toast.success(`+${bonusPointsAmount} poeng gitt til ${user?.name || 'bruker'}! ${reason}`);
+      setBonusPointsAmount(100);
+      setBonusPointsReason('');
+      loadStats();
+    } catch (err) {
+      toast.error('Kunne ikke gi bonpoeng');
+    } finally {
+      setApplyingBonus(false);
+    }
+  };
+
+  const handleGiveBonusToClass = async () => {
+    if (!selectedClassForBonus) return toast.error('Velg en klasse');
+    if (!bonusPointsAmount || bonusPointsAmount <= 0) return toast.error('Skriv inn gyldig poengsum');
+    
+    setApplyingBonus(true);
+    try {
+      const cls = stats?.classes?.find(c => c.id === selectedClassForBonus);
+      const reason = bonusPointsReason || 'Bonus fra admin';
+      const count = await addBonusPointsToClass(selectedClassForBonus, bonusPointsAmount, reason);
+      toast.success(`${count} elever fikk +${bonusPointsAmount} poeng! ${reason}`);
+      setBonusPointsAmount(100);
+      setBonusPointsReason('');
+      loadStats();
+    } catch (err) {
+      toast.error('Kunne ikke gi bonpoeng til klasse');
+    } finally {
+      setApplyingBonus(false);
+    }
+  };
+
+  const handleResetUserPoints = async (userId) => {
+    if (!confirm('Er du sikker? Poengene til denne brukeren vil bli nullstilt.')) return;
+    try {
+      await resetUserPoints(userId);
+      toast.success('Poeng nullstilt!');
+      loadStats();
+    } catch (err) {
+      toast.error('Kunne ikke nullstille poeng');
+    }
+  };
+
+  const handleResetClassPoints = async (classId) => {
+    if (!confirm('Er du sikker? Alle poeng i denne klassen vil bli nullstilt.')) return;
+    try {
+      const count = await resetClassPoints(classId);
+      toast.success(`${count} elever sine poeng nullstilt!`);
+      loadStats();
+    } catch (err) {
+      toast.error('Kunne ikke nullstille poeng');
+    }
+  };
+
+  const handleResetAllPoints = async () => {
+    if (!confirm('⚠️ ADVARSEL: Dette vil nullstille ALLE poeng til alle elever! Er du helt sikker?')) return;
+    if (!confirm('Dette kan ikke angres! Bekreft en gang til.')) return;
+    try {
+      const count = await resetAllPoints();
+      toast.success(`Alle poeng nullstilt for ${count} elever!`);
+      loadStats();
+    } catch (err) {
+      toast.error('Kunne ikke nullstille poeng');
+    }
+  };
+
+  const handleResetAllWaste = async () => {
+    if (!confirm('⚠️ ADVARSEL: Dette vil slette ALL avfallslogg OG nullstille alle poeng! Er du sikker?')) return;
+    if (!confirm('Dette kan ikke angres! Alle data vil gå tapt!')) return;
+    try {
+      const result = await resetAllWaste();
+      toast.success(` ${result.usersReset} brukere nullstilt, ${result.logsDeleted} logger slettet!`);
+      loadStats();
+    } catch (err) {
+      toast.error('Kunne ikke slette data');
+    }
+  };
+
+  const handleDeleteAllUsers = async () => {
+    if (!confirm('⚠️ ADVARSEL: Dette vil slette ALLE brukere (unntatt admin)! Er du sikker?')) return;
+    if (!confirm('Dette kan ikke angres! Alle brukere unntatt admin vil bli slettet!')) return;
+    try {
+      const count = await deleteAllUsers();
+      toast.success(`${count} brukere slettet!`);
+      loadStats();
+    } catch (err) {
+      toast.error('Kunne ikke slette brukere');
+    }
+  };
+
+  const handleDeleteAllClasses = async () => {
+    if (!confirm('⚠️ ADVARSEL: Dette vil slette ALLE klasser! Er du sikker?')) return;
+    if (!confirm('Dette kan ikke angres! Alle klasser vil bli slettet!')) return;
+    try {
+      const count = await deleteAllClasses();
+      toast.success(`${count} klasser slettet!`);
+      loadStats();
+    } catch (err) {
+      toast.error('Kunne ikke slette klasser');
+    }
+  };
+
   if (loading || !userData) {
     return <div className="min-h-screen bg-dark-900 flex items-center justify-center"><div className="w-10 h-10 border-2 border-bio-500/30 border-t-bio-500 rounded-full animate-spin" /></div>;
   }
@@ -280,6 +401,7 @@ export default function AdminDashboard() {
     { id: 'users', label: 'Brukere' },
     { id: 'classes', label: 'Klasser' },
     { id: 'logs', label: 'Logger' },
+    { id: 'tools', label: 'Verktøy 🛠️' },
   ];
 
   const topStudents = stats?.students
@@ -699,6 +821,237 @@ export default function AdminDashboard() {
                   })}
                 </tbody>
               </table>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'tools' && stats && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <h2 className="font-display font-700 text-white text-xl">Admin Verktøy 🛠️</h2>
+              <button
+                onClick={() => setDebugMode(!debugMode)}
+                className={`px-4 py-2 rounded-xl text-sm font-body font-500 transition-all ${
+                  debugMode ? 'bg-red-500/15 text-red-400 border border-red-500/30' : 'bg-white/5 text-slate-400 hover:text-white'
+                }`}
+              >
+                {debugMode ? 'Skjul Debug' : 'Vis Debug'}
+              </button>
+            </div>
+
+            {debugMode && (
+              <div className="bio-card p-4 bg-red-500/5 border-red-500/20">
+                <h3 className="text-red-400 font-display font-700 text-lg mb-2">🔧 Debug Mode</h3>
+                <div className="text-slate-400 text-sm font-body space-y-1">
+                  <p>Totalt brukere: {stats.totalUsers}</p>
+                  <p>Totalt elever: {stats.totalStudents}</p>
+                  <p>Totalt lærere: {stats.totalTeachers}</p>
+                  <p>Totalt klasser: {stats.totalClasses}</p>
+                  <p>Totalt logger: {stats.totalLogs}</p>
+                  <p>Totalt avfall: {stats.totalWaste?.toFixed(2)} kg</p>
+                  <p>Admin UID: {user?.uid}</p>
+                  <p>Admin E-post: {user?.email}</p>
+                </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="bio-card p-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 rounded-xl bg-bio-500/15 flex items-center justify-center">
+                    <Gift size={20} className="text-bio-400" />
+                  </div>
+                  <div>
+                    <h3 className="font-display font-700 text-white">Gi Bonpoeng 🎁</h3>
+                    <p className="text-slate-400 text-xs font-body">Gi bonpoeng til elever</p>
+                  </div>
+                </div>
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-slate-300 text-sm font-body font-500 block mb-1">Velg elev</label>
+                    <select
+                      value={selectedUserForBonus}
+                      onChange={e => setSelectedUserForBonus(e.target.value)}
+                      className="bio-input text-sm"
+                    >
+                      <option value="">Velg en elev...</option>
+                      {(stats?.students || []).map(s => (
+                        <option key={s.uid} value={s.uid}>{s.name} ({s.points} p)</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-slate-300 text-sm font-body font-500 block mb-1">Poeng</label>
+                    <input
+                      type="number"
+                      value={bonusPointsAmount}
+                      onChange={e => setBonusPointsAmount(parseInt(e.target.value) || 0)}
+                      className="bio-input text-sm"
+                      min="1"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-slate-300 text-sm font-body font-500 block mb-1">Grunn (valgfritt)</label>
+                    <input
+                      type="text"
+                      value={bonusPointsReason}
+                      onChange={e => setBonusPointsReason(e.target.value)}
+                      placeholder="F.eks. Flott jobba!"
+                      className="bio-input text-sm"
+                    />
+                  </div>
+                  <button
+                    onClick={handleGiveBonusToUser}
+                    disabled={applyingBonus || !selectedUserForBonus}
+                    className="btn-primary w-full flex items-center justify-center gap-2"
+                  >
+                    {applyingBonus ? 'Gir poeng...' : <><Gift size={16} /> Gi {bonusPointsAmount} poeng</>}
+                  </button>
+                </div>
+              </div>
+
+              <div className="bio-card p-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 rounded-xl bg-earth-500/15 flex items-center justify-center">
+                    <Crown size={20} className="text-earth-400" />
+                  </div>
+                  <div>
+                    <h3 className="font-display font-700 text-white">Gi Klasse Bonus 👑</h3>
+                    <p className="text-slate-400 text-xs font-body">Gi bonpoeng til hele klasser</p>
+                  </div>
+                </div>
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-slate-300 text-sm font-body font-500 block mb-1">Velg klasse</label>
+                    <select
+                      value={selectedClassForBonus}
+                      onChange={e => setSelectedClassForBonus(e.target.value)}
+                      className="bio-input text-sm"
+                    >
+                      <option value="">Velg en klasse...</option>
+                      {(stats?.classes || []).map(c => (
+                        <option key={c.id} value={c.id}>{c.name} ({c.studentCount || 0} elever)</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-slate-300 text-sm font-body font-500 block mb-1">Poeng per elev</label>
+                    <input
+                      type="number"
+                      value={bonusPointsAmount}
+                      onChange={e => setBonusPointsAmount(parseInt(e.target.value) || 0)}
+                      className="bio-input text-sm"
+                      min="1"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-slate-300 text-sm font-body font-500 block mb-1">Grunn (valgfritt)</label>
+                    <input
+                      type="text"
+                      value={bonusPointsReason}
+                      onChange={e => setBonusPointsReason(e.target.value)}
+                      placeholder="F.eks. Beste klassen!"
+                      className="bio-input text-sm"
+                    />
+                  </div>
+                  <button
+                    onClick={handleGiveBonusToClass}
+                    disabled={applyingBonus || !selectedClassForBonus}
+                    className="btn-primary w-full flex items-center justify-center gap-2 bg-earth-600"
+                  >
+                    {applyingBonus ? 'Gir poeng...' : <><Crown size={16} /> Gi {bonusPointsAmount} poeng til alle</>}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="bio-card p-6 border-orange-500/20">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-xl bg-orange-500/15 flex items-center justify-center">
+                  <RotateCcw size={20} className="text-orange-400" />
+                </div>
+                <div>
+                  <h3 className="font-display font-700 text-white">Nullstill Data ⚠️</h3>
+                  <p className="text-slate-400 text-xs font-body">Farlige operasjoner - dobbelbekreftelse kreves</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                <button
+                  onClick={handleResetAllPoints}
+                  className="p-3 rounded-xl bg-orange-500/10 border border-orange-500/20 text-orange-400 text-sm font-body font-500 hover:bg-orange-500/20 transition-all"
+                >
+                  <RotateCcw size={16} className="mx-auto mb-1" />
+                  Nullstill Alle Poeng
+                </button>
+                <button
+                  onClick={handleResetAllWaste}
+                  className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm font-body font-500 hover:bg-red-500/20 transition-all"
+                >
+                  <Bomb size={16} className="mx-auto mb-1" />
+                  Slett All Data
+                </button>
+                <button
+                  onClick={handleDeleteAllUsers}
+                  className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm font-body font-500 hover:bg-red-500/20 transition-all"
+                >
+                  <Skull size={16} className="mx-auto mb-1" />
+                  Slett Alle Brukere
+                </button>
+                <button
+                  onClick={handleDeleteAllClasses}
+                  className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm font-body font-500 hover:bg-red-500/20 transition-all"
+                >
+                  <School size={16} className="mx-auto mb-1" />
+                  Slett Alle Klasser
+                </button>
+              </div>
+            </div>
+
+            <div className="bio-card p-6 border-moss-500/20">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-xl bg-moss-500/15 flex items-center justify-center">
+                  <Sparkles size={20} className="text-moss-400" />
+                </div>
+                <div>
+                  <h3 className="font-display font-700 text-white">Super-Krefter ✨</h3>
+                  <p className="text-slate-400 text-xs font-body">Morsomme admin-muligheter</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+                <button
+                  onClick={() => {
+                    setBonusPointsAmount(1000);
+                    setBonusPointsReason('🍀 LUCKY WINNER! 🍀');
+                    toast.success('1000 bonpoeng klar til utdeling!');
+                  }}
+                  className="p-3 rounded-xl bg-moss-500/10 border border-moss-500/20 text-moss-400 text-sm font-body font-500 hover:bg-moss-500/20 transition-all"
+                >
+                  <Sparkles size={16} className="mx-auto mb-1" />
+                  Lucky Winner Mode
+                </button>
+                <button
+                  onClick={() => {
+                    setBonusPointsAmount(500);
+                    setBonusPointsReason('🌟 Ukens Miljø-Helt! 🌟');
+                    toast.success('500 bonpoeng klar til utdeling!');
+                  }}
+                  className="p-3 rounded-xl bg-earth-500/10 border border-earth-500/20 text-earth-400 text-sm font-body font-500 hover:bg-earth-500/20 transition-all"
+                >
+                  <Zap size={16} className="mx-auto mb-1" />
+                  Miljø-Helt Bonus
+                </button>
+                <button
+                  onClick={() => {
+                    setBonusPointsAmount(10000);
+                    setBonusPointsReason('👑 ADMIN CROWN JEWEL 👑');
+                    toast.success('10,000 bonpoeng klar!');
+                  }}
+                  className="p-3 rounded-xl bg-bio-500/10 border border-bio-500/20 text-bio-400 text-sm font-body font-500 hover:bg-bio-500/20 transition-all"
+                >
+                  <Crown size={16} className="mx-auto mb-1" />
+                  Crown Jewel Bonus
+                </button>
+              </div>
             </div>
           </div>
         )}

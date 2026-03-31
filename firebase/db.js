@@ -2309,3 +2309,126 @@ export async function getQuizHistoryForStudent(studentUid) {
   
   return history;
 }
+
+export async function addBonusPointsToUser(userId, points, reason) {
+  ensureFirebase();
+  const userRef = doc(db, 'users', userId);
+  const userSnap = await getDoc(userRef);
+  if (!userSnap.exists()) {
+    throw new Error('User not found');
+  }
+  
+  const currentPoints = userSnap.data().points || 0;
+  await updateDoc(userRef, { points: currentPoints + points });
+  
+  await addDoc(collection(db, 'activityFeed'), {
+    userId,
+    message: `+${points} bonpoeng: ${reason}`,
+    type: 'admin_bonus',
+    points,
+    timestamp: new Date().toISOString(),
+  });
+}
+
+export async function addBonusPointsToClass(classId, points, reason) {
+  ensureFirebase();
+  const studentsRef = collection(db, 'users');
+  const q = query(studentsRef, where('classId', '==', classId));
+  const snapshot = await getDocs(q);
+  
+  const promises = [];
+  for (const studentDoc of snapshot.docs) {
+    promises.push(addBonusPointsToUser(studentDoc.id, points, reason));
+  }
+  
+  await Promise.all(promises);
+  return snapshot.size;
+}
+
+export async function resetUserPoints(userId) {
+  ensureFirebase();
+  const userRef = doc(db, 'users', userId);
+  await updateDoc(userRef, { points: 0 });
+}
+
+export async function resetClassPoints(classId) {
+  ensureFirebase();
+  const studentsRef = collection(db, 'users');
+  const q = query(studentsRef, where('classId', '==', classId));
+  const snapshot = await getDocs(q);
+  
+  const promises = [];
+  for (const studentDoc of snapshot.docs) {
+    promises.push(resetUserPoints(studentDoc.id));
+  }
+  
+  await Promise.all(promises);
+  return snapshot.size;
+}
+
+export async function resetAllPoints() {
+  ensureFirebase();
+  const usersRef = collection(db, 'users');
+  const q = query(usersRef, where('role', '==', 'student'));
+  const snapshot = await getDocs(q);
+  
+  const promises = [];
+  for (const userDoc of snapshot.docs) {
+    promises.push(resetUserPoints(userDoc.id));
+  }
+  
+  await Promise.all(promises);
+  return snapshot.size;
+}
+
+export async function resetAllWaste() {
+  ensureFirebase();
+  const usersRef = collection(db, 'users');
+  const snapshot = await getDocs(usersRef);
+  
+  const promises = [];
+  for (const userDoc of snapshot.docs) {
+    if (userDoc.data().role === 'student') {
+      promises.push(updateDoc(doc(db, 'users', userDoc.id), { totalWaste: 0, points: 0 }));
+    }
+  }
+  
+  const logsRef = collection(db, 'waste_logs');
+  const logsSnapshot = await getDocs(logsRef);
+  for (const logDoc of logsSnapshot.docs) {
+    promises.push(deleteDoc(doc(db, 'waste_logs', logDoc.id)));
+  }
+  
+  await Promise.all(promises);
+  return { usersReset: snapshot.docs.length, logsDeleted: logsSnapshot.size };
+}
+
+export async function deleteAllUsers() {
+  ensureFirebase();
+  const usersRef = collection(db, 'users');
+  const snapshot = await getDocs(usersRef);
+  
+  const promises = [];
+  for (const userDoc of snapshot.docs) {
+    if (userDoc.data().role !== 'admin') {
+      promises.push(deleteDoc(doc(db, 'users', userDoc.id)));
+    }
+  }
+  
+  await Promise.all(promises);
+  return snapshot.docs.length - 1;
+}
+
+export async function deleteAllClasses() {
+  ensureFirebase();
+  const classesRef = collection(db, 'classes');
+  const snapshot = await getDocs(classesRef);
+  
+  const promises = [];
+  for (const classDoc of snapshot.docs) {
+    promises.push(deleteDoc(doc(db, 'classes', classDoc.id)));
+  }
+  
+  await Promise.all(promises);
+  return snapshot.size;
+}
